@@ -1,0 +1,8 @@
+INFO:     Started server process [19076]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8020 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49248 - "OPTIONS /api/hours/entries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49249 - "POST /api/auth/register HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49250 - "PUT /api/hours/entries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49251 - "PUT /api/hours/entries HTTP/1.1" 200 OK

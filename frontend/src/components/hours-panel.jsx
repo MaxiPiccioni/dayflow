@@ -38,7 +38,6 @@ export function HoursPanel() {
   const [confirmClose, setConfirmClose] = useState(false);
 
   const applyState = (data) => { setPeriod(data.period); setEntries(data.entries.map(fromApiEntry)); setPayments(data.payments.map(fromApiPayment)); setClosedPeriods(data.closed_periods.map(fromApiClosedPeriod)); };
-  const refresh = async () => applyState(await api("/hours"));
 
   useEffect(() => { api("/hours").then((data) => { applyState(data); setSelectedDate(data.period.start); setLoading(false); }); }, []);
 
@@ -56,9 +55,9 @@ export function HoursPanel() {
   [...inPeriod].sort((a, b) => a.date.localeCompare(b.date)).forEach((entry) => { const entryValue = value(entry); dateColors[entry.date] = remainingPaid >= entryValue ? "#bbf7d0" : "#fef08a"; remainingPaid -= entryValue; });
 
   const updateRate = (rateValue) => { const rate = Number(rateValue); setPeriod((current) => ({ ...current, rate })); api("/hours/period", { method: "PATCH", body: JSON.stringify({ rate }) }).catch(() => {}); };
-  const saveEntry = async (form) => { await api("/hours/entries", { method: "PUT", body: JSON.stringify(toApiEntry(form)) }); await refresh(); setEntryModal(null); };
-  const removeEntry = async (id) => { await api(`/hours/entries/${id}`, { method: "DELETE" }); await refresh(); setEntryModal(null); };
-  const addPayment = async (payment) => { await api("/hours/payments", { method: "POST", body: JSON.stringify({ amount: payment.amount, method: payment.method, payment_date: payment.date }) }); await refresh(); };
+  const saveEntry = (form) => { const previous = entries; const existing = entries.find((entry) => entry.date === form.date); setEntries(existing ? entries.map((entry) => entry.date === form.date ? { ...form, id: existing.id } : entry) : [...entries, { ...form, id: `temp-${form.date}` }]); setEntryModal(null); api("/hours/entries", { method: "PUT", body: JSON.stringify(toApiEntry(form)) }).then((saved) => setEntries((current) => current.map((entry) => entry.date === form.date ? fromApiEntry(saved) : entry))).catch(() => setEntries(previous)); };
+  const removeEntry = (id) => { const previous = entries; setEntries(entries.filter((entry) => entry.id !== id)); setEntryModal(null); api(`/hours/entries/${id}`, { method: "DELETE" }).catch(() => setEntries(previous)); };
+  const addPayment = (payment) => { const tempId = `temp-${Date.now()}`; setPayments([...payments, { ...payment, id: tempId }]); api("/hours/payments", { method: "POST", body: JSON.stringify({ amount: payment.amount, method: payment.method, payment_date: payment.date }) }).then((data) => applyState(data)).catch(() => setPayments((current) => current.filter((item) => item.id !== tempId))); };
   const duplicate = () => { const current = entries.find((entry) => entry.date === selectedDate); if (!current) return; const next = new Date(`${selectedDate}T12:00:00`); next.setDate(next.getDate() + 1); const nextDate = next.toISOString().slice(0, 10); saveEntry({ ...current, date: nextDate }); setSelectedDate(nextDate); };
   const finishClosePeriod = async () => { const data = await api("/hours/close", { method: "POST" }); applyState(data); setSelectedDate(data.period.start); };
   const reopenPeriod = async (item) => { const data = await api(`/hours/periods/${item.id}/reopen`, { method: "POST" }); applyState(data); setSelectedDate(data.period.start); };
