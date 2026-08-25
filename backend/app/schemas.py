@@ -94,6 +94,14 @@ class EventCreate(BaseModel):
     color: str = Field(default="#d9f99d", max_length=10)
 
 
+class EventUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    event_date: date | None = None
+    time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    type: str | None = Field(default=None, max_length=30)
+    color: str | None = Field(default=None, max_length=10)
+
+
 class EventOut(EventCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int

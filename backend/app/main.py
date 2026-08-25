@@ -16,6 +16,7 @@ from .schemas import (
     DashboardOut,
     EventCreate,
     EventOut,
+    EventUpdate,
     HabitCreate,
     HabitOut,
     HabitUpdate,
@@ -223,6 +224,27 @@ def toggle_event(event_id: int, user: User = Depends(current_user), db: Session 
     db.commit()
     db.refresh(event)
     return event
+
+
+@app.patch("/api/events/{event_id}", response_model=EventOut)
+def update_event(event_id: int, payload: EventUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Event:
+    event = db.scalar(select(Event).where(Event.id == event_id, Event.user_id == user.id))
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(event, field, value)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.delete("/api/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_event(event_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    event = db.scalar(select(Event).where(Event.id == event_id, Event.user_id == user.id))
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    db.delete(event)
+    db.commit()
 
 
 @app.get("/api/pomodoro", response_model=PomodoroOut)

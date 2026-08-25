@@ -18,7 +18,8 @@
       "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\nTime: %{time_total}s\\\\n\" https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
       "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
       "Bash(curl -s -I https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
-      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")"
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8033 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; \"done\")"
     ]
   }
 }
