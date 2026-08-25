@@ -16,7 +16,10 @@ class User(Base):
     tasks: Mapped[list["Task"]] = relationship(cascade="all, delete-orphan")
     habits: Mapped[list["Habit"]] = relationship(cascade="all, delete-orphan")
     transactions: Mapped[list["Transaction"]] = relationship(cascade="all, delete-orphan")
-    work_sessions: Mapped[list["WorkSession"]] = relationship(cascade="all, delete-orphan")
+    events: Mapped[list["Event"]] = relationship(cascade="all, delete-orphan")
+    pay_periods: Mapped[list["PayPeriod"]] = relationship(cascade="all, delete-orphan")
+    hour_entries: Mapped[list["HourEntry"]] = relationship(cascade="all, delete-orphan")
+    hour_payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -52,11 +55,59 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
-class WorkSession(Base):
-    __tablename__ = "work_sessions"
+class Event(Base):
+    __tablename__ = "events"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    minutes: Mapped[int] = mapped_column(Integer, default=0)
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    event_date: Mapped[date] = mapped_column(Date, index=True)
+    time: Mapped[str] = mapped_column(String(5), default="09:00")
+    type: Mapped[str] = mapped_column(String(30), default="Personal")
+    color: Mapped[str] = mapped_column(String(10), default="#d9f99d")
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PomodoroSettings(Base):
+    __tablename__ = "pomodoro_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    repetitions: Mapped[int] = mapped_column(Integer, default=4)
+    work: Mapped[int] = mapped_column(Integer, default=25)
+    break_time: Mapped[int] = mapped_column(Integer, default=5)
+
+
+class PayPeriod(Base):
+    __tablename__ = "pay_periods"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    start: Mapped[date] = mapped_column(Date)
+    end: Mapped[date] = mapped_column(Date)
+    rate: Mapped[float] = mapped_column(Float, default=0)
+    closed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    total_hours: Mapped[float] = mapped_column(Float, default=0)
+    expected: Mapped[float] = mapped_column(Float, default=0)
+    paid: Mapped[float] = mapped_column(Float, default=0)
+    balance: Mapped[float] = mapped_column(Float, default=0)
+    payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
+
+
+class HourEntry(Base):
+    __tablename__ = "hour_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    entry_date: Mapped[date] = mapped_column(Date, index=True)
+    from_time: Mapped[str] = mapped_column(String(5), default="09:00")
+    to_time: Mapped[str] = mapped_column(String(5), default="17:00")
+    hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    extra: Mapped[bool] = mapped_column(Boolean, default=False)
+    holiday: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class HourPayment(Base):
+    __tablename__ = "hour_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    period_id: Mapped[int] = mapped_column(ForeignKey("pay_periods.id"), index=True)
+    amount: Mapped[float] = mapped_column(Float)
+    method: Mapped[str] = mapped_column(String(30), default="Transferencia")
+    payment_date: Mapped[date] = mapped_column(Date)

@@ -1,0 +1,16 @@
+INFO:     Started server process [26112]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8010 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64376 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63481 - "POST /api/auth/register HTTP/1.1" 201 Created
+INFO:     127.0.0.1:63482 - "GET /api/pomodoro HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63483 - "PATCH /api/pomodoro HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63484 - "POST /api/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:63485 - "PATCH /api/events/1/toggle HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63486 - "GET /api/hours HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63487 - "PATCH /api/hours/period HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63488 - "PUT /api/hours/entries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63489 - "POST /api/hours/payments HTTP/1.1" 201 Created
+INFO:     127.0.0.1:63490 - "POST /api/hours/close HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63491 - "GET /api/hours HTTP/1.1" 200 OK

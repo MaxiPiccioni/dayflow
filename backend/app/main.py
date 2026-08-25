@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+import calendar
+from datetime import date as date_type
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,13 +9,25 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import Base, engine, get_db
-from .models import Habit, Task, Transaction, User, WorkSession
+from .models import Event, Habit, HourEntry, HourPayment, PayPeriod, PomodoroSettings, Task, Transaction, User
 from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
+    ClosedPeriodOut,
     DashboardOut,
+    EventCreate,
+    EventOut,
     HabitCreate,
     HabitOut,
     HabitUpdate,
+    HourEntryCreate,
+    HourEntryOut,
+    HourPaymentCreate,
+    HourPaymentOut,
+    HoursStateOut,
+    PayPeriodOut,
+    PomodoroOut,
+    PomodoroUpdate,
+    RateUpdate,
     TaskCreate,
     TaskOut,
     TaskUpdate,
@@ -95,9 +108,7 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.due_date, Task.completed, Task.id)).all()
     habits = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
     transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc())).all()
-    sessions = db.scalars(select(WorkSession).where(WorkSession.user_id == user.id, WorkSession.started_at >= datetime.utcnow() - timedelta(days=30))).all()
-    balance = sum(item.amount if item.kind == "income" else -item.amount for item in transactions)
-    return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, work_minutes=sum(item.minutes for item in sessions), balance=balance)
+    return DashboardOut(tasks=tasks, habits=habits, transactions=transactions)
 
 
 @app.post("/api/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -187,3 +198,187 @@ def delete_transaction(transaction_id: int, user: User = Depends(current_user), 
         raise HTTPException(status_code=404, detail="Transaction not found")
     db.delete(transaction)
     db.commit()
+
+
+@app.get("/api/events", response_model=list[EventOut])
+def list_events(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Event]:
+    return db.scalars(select(Event).where(Event.user_id == user.id).order_by(Event.event_date, Event.time)).all()
+
+
+@app.post("/api/events", response_model=EventOut, status_code=status.HTTP_201_CREATED)
+def create_event(payload: EventCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Event:
+    event = Event(user_id=user.id, **payload.model_dump())
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.patch("/api/events/{event_id}/toggle", response_model=EventOut)
+def toggle_event(event_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Event:
+    event = db.scalar(select(Event).where(Event.id == event_id, Event.user_id == user.id))
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    event.done = not event.done
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.get("/api/pomodoro", response_model=PomodoroOut)
+def get_pomodoro_settings(user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroSettings:
+    settings_row = db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
+    if not settings_row:
+        settings_row = PomodoroSettings(user_id=user.id)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+@app.patch("/api/pomodoro", response_model=PomodoroOut)
+def update_pomodoro_settings(payload: PomodoroUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroSettings:
+    settings_row = db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
+    if not settings_row:
+        settings_row = PomodoroSettings(user_id=user.id)
+        db.add(settings_row)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(settings_row, field, value)
+    db.commit()
+    db.refresh(settings_row)
+    return settings_row
+
+
+def _add_month(value: date_type) -> date_type:
+    month = value.month + 1
+    year = value.year + (1 if month > 12 else 0)
+    month = month - 12 if month > 12 else month
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def _period_end(start: date_type) -> date_type:
+    shifted = _add_month(start)
+    return shifted.replace(day=10)
+
+
+def _entry_duration(entry: HourEntry) -> float:
+    if entry.holiday:
+        return 4.0
+    if entry.hours is not None:
+        return entry.hours
+    from_h, from_m = (int(part) for part in entry.from_time.split(":"))
+    to_h, to_m = (int(part) for part in entry.to_time.split(":"))
+    return max(0.0, (to_h * 60 + to_m - from_h * 60 - from_m) / 60)
+
+
+def _entry_value(entry: HourEntry, rate: float) -> float:
+    return _entry_duration(entry) * rate * (2 if entry.extra else 1)
+
+
+def _get_or_create_open_period(db: Session, user: User) -> PayPeriod:
+    period = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(False)))
+    if period:
+        return period
+    last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
+    if last:
+        start = _add_month(last.start)
+        rate = last.rate
+    else:
+        start = date_type.today()
+        rate = 0.0
+    period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
+    db.add(period)
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+def _close_period(db: Session, period: PayPeriod, user: User) -> None:
+    entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date >= period.start, HourEntry.entry_date <= period.end)).all()
+    payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id)).all()
+    period.total_hours = sum(_entry_duration(entry) for entry in entries)
+    period.expected = sum(_entry_value(entry, period.rate) for entry in entries)
+    period.paid = sum(payment.amount for payment in payments)
+    period.balance = period.expected - period.paid
+    period.closed = True
+
+
+def _build_hours_state(db: Session, user: User) -> HoursStateOut:
+    period = _get_or_create_open_period(db, user)
+    entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id).order_by(HourEntry.entry_date)).all()
+    payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id).order_by(HourPayment.payment_date)).all()
+    closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
+    return HoursStateOut(
+        period=PayPeriodOut.model_validate(period),
+        entries=[HourEntryOut.model_validate(entry) for entry in entries],
+        payments=[HourPaymentOut.model_validate(payment) for payment in payments],
+        closed_periods=[ClosedPeriodOut.model_validate(item) for item in closed_periods],
+    )
+
+
+@app.get("/api/hours", response_model=HoursStateOut)
+def get_hours(user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    return _build_hours_state(db, user)
+
+
+@app.patch("/api/hours/period", response_model=HoursStateOut)
+def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    period = _get_or_create_open_period(db, user)
+    period.rate = payload.rate
+    db.commit()
+    return _build_hours_state(db, user)
+
+
+@app.put("/api/hours/entries", response_model=HourEntryOut)
+def upsert_hour_entry(payload: HourEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HourEntry:
+    entry = db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
+    if entry:
+        for field, value in payload.model_dump().items():
+            setattr(entry, field, value)
+    else:
+        entry = HourEntry(user_id=user.id, **payload.model_dump())
+        db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@app.delete("/api/hours/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_hour_entry(entry_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    entry = db.scalar(select(HourEntry).where(HourEntry.id == entry_id, HourEntry.user_id == user.id))
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    db.delete(entry)
+    db.commit()
+
+
+@app.post("/api/hours/payments", response_model=HoursStateOut, status_code=status.HTTP_201_CREATED)
+def create_payment(payload: HourPaymentCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    period = _get_or_create_open_period(db, user)
+    payment = HourPayment(user_id=user.id, period_id=period.id, **payload.model_dump())
+    db.add(payment)
+    db.commit()
+    return _build_hours_state(db, user)
+
+
+@app.post("/api/hours/close", response_model=HoursStateOut)
+def close_period(user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    period = _get_or_create_open_period(db, user)
+    _close_period(db, period, user)
+    db.commit()
+    _get_or_create_open_period(db, user)
+    return _build_hours_state(db, user)
+
+
+@app.post("/api/hours/periods/{period_id}/reopen", response_model=HoursStateOut)
+def reopen_period(period_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    target = db.scalar(select(PayPeriod).where(PayPeriod.id == period_id, PayPeriod.user_id == user.id))
+    if not target:
+        raise HTTPException(status_code=404, detail="Period not found")
+    current_open = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(False)))
+    if current_open and current_open.id != target.id:
+        _close_period(db, current_open, user)
+    target.closed = False
+    db.commit()
+    return _build_hours_state(db, user)

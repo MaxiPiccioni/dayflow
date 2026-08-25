@@ -84,5 +84,87 @@ class DashboardOut(BaseModel):
     tasks: list[TaskOut]
     habits: list[HabitOut]
     transactions: list[TransactionOut]
-    work_minutes: int
+
+
+class EventCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    event_date: date
+    time: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
+    type: str = Field(default="Personal", max_length=30)
+    color: str = Field(default="#d9f99d", max_length=10)
+
+
+class EventOut(EventCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    done: bool
+
+
+class PomodoroOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    repetitions: int
+    work: int
+    break_time: int
+
+
+class PomodoroUpdate(BaseModel):
+    repetitions: int | None = Field(default=None, ge=1, le=20)
+    work: int | None = Field(default=None, ge=1, le=180)
+    break_time: int | None = Field(default=None, ge=1, le=60)
+
+
+class HourEntryCreate(BaseModel):
+    entry_date: date
+    from_time: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
+    to_time: str = Field(default="17:00", pattern=r"^\d{2}:\d{2}$")
+    hours: float | None = Field(default=None, ge=0)
+    extra: bool = False
+    holiday: bool = False
+
+
+class HourEntryOut(HourEntryCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
+class HourPaymentCreate(BaseModel):
+    amount: float = Field(gt=0)
+    method: str = Field(default="Transferencia", max_length=30)
+    payment_date: date
+
+
+class HourPaymentOut(HourPaymentCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
+class PayPeriodOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    start: date
+    end: date
+    rate: float
+    closed: bool
+
+
+class ClosedPeriodOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    start: date
+    end: date
+    rate: float
+    total_hours: float
+    expected: float
+    paid: float
     balance: float
+
+
+class RateUpdate(BaseModel):
+    rate: float = Field(ge=0)
+
+
+class HoursStateOut(BaseModel):
+    period: PayPeriodOut
+    entries: list[HourEntryOut]
+    payments: list[HourPaymentOut]
+    closed_periods: list[ClosedPeriodOut]
