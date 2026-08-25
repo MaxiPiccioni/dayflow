@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root { --background: #f4f5ef; --foreground: #18181b; }
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(9 9 11 / 0.5);
+  animation: modal-overlay-in 350ms ease-out both;
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 28rem;
+  border-radius: 1rem;
+  background: white;
+  padding: 1.5rem;
+  color: #18181b;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  animation: modal-panel-in 350ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dark .modal-panel { background: #18181b; color: #f4f4f5; }
+.modal-overlay-out { animation: modal-overlay-out 350ms ease-in both; }
+.modal-panel-out { animation: modal-panel-out 350ms ease-in both; }
+
+@keyframes modal-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modal-panel-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes modal-panel-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(8px) scale(0.97); } }
+
+.pie-slice {
+  stroke-dashoffset: var(--pie-to);
+  animation: pie-grow 950ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pie-grow {
+  from { stroke-dashoffset: var(--pie-from); }
+  to { stroke-dashoffset: var(--pie-to); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay, .modal-panel { animation-duration: 1ms; }
+  .pie-slice { animation-duration: 1ms; }
+}
+
+@media print {
+  body.print-hours .app-sidebar,
+  body.print-hours .app-header { display: none !important; }
+  body.print-hours .hours-module > *:not(.hours-calendar-card):not(.hours-summary),
+  body.print-hours .hours-calendar-card > div:last-child,
+  body.print-hours .hours-calendar-card > div:first-child button,
+  body.print-hours .hours-calendar-card .hours-saldos { display: none !important; }
+  body.print-hours .hours-module { color: #18181b !important; }
+  @page { size: A4; margin: 10mm; }
+  body.print-hours .hours-module { max-height: 270mm; overflow: hidden; }
+}
+
+.tab-panel { animation: tab-enter 180ms ease-out; }
+
+.task-strike {
+  background: linear-gradient(currentColor, currentColor) left center / 0% 1px no-repeat;
+  animation: task-strike 500ms ease-out forwards;
+}
+
+@keyframes tab-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes task-strike {
+  from { background-size: 0% 1px; }
+  to { background-size: 100% 1px; }
+}
+
+.theme-wave {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 100%;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  pointer-events: none;
+  animation: theme-expand 500ms ease-out forwards;
+}
+
+.theme-wave-dark { background: #09090b; }
+.theme-wave-light { background: #f4f5ef; }
+
+@keyframes theme-expand {
+  from { transform: translate(-100%, 0) scale(1); opacity: 0.95; }
+  to { transform: translate(-100%, 0) scale(100); opacity: 0; }
+}
