@@ -12,7 +12,9 @@
       "Bash(nohup ./.venv/Scripts/python.exe -m uvicorn app.main:app --port 8010)",
       "Bash(curl -s -o /dev/null -w \"health=%{http_code}\\\\n\" http://127.0.0.1:8010/api/health)",
       "Bash(python -c ' *)",
-      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 26112 -Force -ErrorAction SilentlyContinue\")"
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 26112 -Force -ErrorAction SilentlyContinue\")",
+      "Bash(find /tmp /c/Users/maxip/AppData/Local/Temp -maxdepth 3 -iname \"*.png\" -newermt \"-15 minutes\" 2>/dev/null | head -20 *)",
+      "Read(//c/Users/maxip/AppData/Roaming/**)"
     ]
   }
 }

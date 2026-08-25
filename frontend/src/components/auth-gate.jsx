@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { api } from "@/lib/api";
 
 const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-500 dark:border-zinc-700";
@@ -56,7 +57,7 @@ export function AuthGate({ children }) {
       <div className="grid min-h-screen place-items-center bg-[#f4f5ef] px-4 dark:bg-zinc-950">
         <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mb-6 flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-900 text-lg text-lime-300">✦</div>
+            <Image src="/logo.png" alt="Dayflow" width={40} height={40} className="h-10 w-10 rounded-xl" />
             <span className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">dayflow</span>
           </div>
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h1>
