@@ -52,17 +52,24 @@ class TaskOut(TaskCreate):
 
 class HabitCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    target: int = Field(default=1, ge=1, le=50)
+    unit: str = Field(default="veces", min_length=1, max_length=30)
 
 
 class HabitUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    progress: int | None = Field(default=None, ge=0, le=100)
-    history: list[int] | None = None
+    target: int | None = Field(default=None, ge=1, le=50)
+    unit: str | None = Field(default=None, min_length=1, max_length=30)
+    count: int | None = Field(default=None, ge=0)
 
 
-class HabitOut(HabitCreate):
+class HabitOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    name: str
+    target: int
+    unit: str
+    count: int
     progress: int
     history: list[int]
 
@@ -176,3 +183,12 @@ class HoursStateOut(BaseModel):
     entries: list[HourEntryOut]
     payments: list[HourPaymentOut]
     closed_periods: list[ClosedPeriodOut]
+
+
+class PomodoroLogOut(BaseModel):
+    date: date
+    minutes: int
+
+
+class PomodoroLogCreate(BaseModel):
+    minutes: int = Field(ge=1, le=60)

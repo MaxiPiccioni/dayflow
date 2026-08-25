@@ -1,5 +1,6 @@
 import calendar
 from datetime import date as date_type
+from datetime import timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import Base, engine, get_db
-from .models import Event, Habit, HourEntry, HourPayment, PayPeriod, PomodoroSettings, Task, Transaction, User
+from .models import Event, Habit, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, Task, Transaction, User
 from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
     ClosedPeriodOut,
@@ -26,6 +27,8 @@ from .schemas import (
     HourPaymentOut,
     HoursStateOut,
     PayPeriodOut,
+    PomodoroLogCreate,
+    PomodoroLogOut,
     PomodoroOut,
     PomodoroUpdate,
     RateUpdate,
@@ -104,11 +107,28 @@ def me(user: User = Depends(current_user)) -> User:
     return user
 
 
+def _roll_habit_day(habit: Habit, today: date_type) -> bool:
+    if habit.updated_on is None:
+        habit.updated_on = today
+        return False
+    if habit.updated_on < today:
+        history = [*habit.history, habit.progress]
+        habit.history = history[-7:]
+        habit.count = 0
+        habit.updated_on = today
+        return True
+    return False
+
+
 @app.get("/api/dashboard", response_model=DashboardOut)
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)) -> DashboardOut:
     tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.due_date, Task.completed, Task.id)).all()
     habits = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
     transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc())).all()
+    today = date_type.today()
+    rolled = [_roll_habit_day(habit, today) for habit in habits]
+    if any(rolled):
+        db.commit()
     return DashboardOut(tasks=tasks, habits=habits, transactions=transactions)
 
 
@@ -155,7 +175,7 @@ def delete_task(task_id: int, user: User = Depends(current_user), db: Session = 
 
 @app.post("/api/habits", response_model=HabitOut, status_code=status.HTTP_201_CREATED)
 def create_habit(payload: HabitCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
-    habit = Habit(user_id=user.id, name=payload.name.strip(), progress=0, history=[0] * 7)
+    habit = Habit(user_id=user.id, name=payload.name.strip(), target=payload.target, unit=payload.unit.strip(), count=0, history=[], updated_on=date_type.today())
     db.add(habit)
     db.commit()
     db.refresh(habit)
@@ -167,8 +187,22 @@ def update_habit(habit_id: int, payload: HabitUpdate, user: User = Depends(curre
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
+    _roll_habit_day(habit, date_type.today())
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(habit, field, value)
+    habit.count = max(0, min(habit.count, habit.target))
+    db.commit()
+    db.refresh(habit)
+    return habit
+
+
+@app.patch("/api/habits/{habit_id}/increment", response_model=HabitOut)
+def increment_habit(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
+    habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    _roll_habit_day(habit, date_type.today())
+    habit.count = 0 if habit.count >= habit.target else habit.count + 1
     db.commit()
     db.refresh(habit)
     return habit
@@ -269,6 +303,28 @@ def update_pomodoro_settings(payload: PomodoroUpdate, user: User = Depends(curre
     db.commit()
     db.refresh(settings_row)
     return settings_row
+
+
+@app.get("/api/pomodoro/history", response_model=list[PomodoroLogOut])
+def get_pomodoro_history(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[PomodoroLogOut]:
+    today = date_type.today()
+    start = today - timedelta(days=6)
+    rows = db.scalars(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date >= start, PomodoroLog.log_date <= today)).all()
+    by_date = {row.log_date: row.minutes for row in rows}
+    return [PomodoroLogOut(date=start + timedelta(days=offset), minutes=by_date.get(start + timedelta(days=offset), 0)) for offset in range(7)]
+
+
+@app.post("/api/pomodoro/log", response_model=PomodoroLogOut)
+def log_pomodoro_minutes(payload: PomodoroLogCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroLogOut:
+    today = date_type.today()
+    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today))
+    if not row:
+        row = PomodoroLog(user_id=user.id, log_date=today, minutes=0)
+        db.add(row)
+    row.minutes += payload.minutes
+    db.commit()
+    db.refresh(row)
+    return PomodoroLogOut(date=row.log_date, minutes=row.minutes)
 
 
 def _add_month(value: date_type) -> date_type:

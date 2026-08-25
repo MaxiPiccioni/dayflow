@@ -20,6 +20,7 @@ class User(Base):
     pay_periods: Mapped[list["PayPeriod"]] = relationship(cascade="all, delete-orphan")
     hour_entries: Mapped[list["HourEntry"]] = relationship(cascade="all, delete-orphan")
     hour_payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
+    pomodoro_logs: Mapped[list["PomodoroLog"]] = relationship(cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -40,8 +41,15 @@ class Habit(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    progress: Mapped[int] = mapped_column(Integer, default=0)
+    target: Mapped[int] = mapped_column(Integer, default=1)
+    unit: Mapped[str] = mapped_column(String(30), default="veces")
+    count: Mapped[int] = mapped_column(Integer, default=0)
     history: Mapped[list[int]] = mapped_column(JSON, default=list)
+    updated_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    @property
+    def progress(self) -> int:
+        return round(self.count / self.target * 100) if self.target else 0
 
 
 class Transaction(Base):
@@ -111,3 +119,11 @@ class HourPayment(Base):
     amount: Mapped[float] = mapped_column(Float)
     method: Mapped[str] = mapped_column(String(30), default="Transferencia")
     payment_date: Mapped[date] = mapped_column(Date)
+
+
+class PomodoroLog(Base):
+    __tablename__ = "pomodoro_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    log_date: Mapped[date] = mapped_column(Date, index=True)
+    minutes: Mapped[int] = mapped_column(Integer, default=0)
