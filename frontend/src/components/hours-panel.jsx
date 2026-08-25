@@ -52,7 +52,7 @@ export function HoursPanel() {
   const balance = expected - paid;
   const dateColors = {};
   let remainingPaid = paid;
-  [...inPeriod].sort((a, b) => a.date.localeCompare(b.date)).forEach((entry) => { const entryValue = value(entry); dateColors[entry.date] = remainingPaid >= entryValue ? "#bbf7d0" : "#fef08a"; remainingPaid -= entryValue; });
+  [...inPeriod].sort((a, b) => a.date.localeCompare(b.date)).forEach((entry) => { const entryValue = value(entry); dateColors[entry.date] = entryValue > 0 && remainingPaid >= entryValue ? "#bbf7d0" : "#fef08a"; remainingPaid -= entryValue; });
 
   const updateRate = (rateValue) => { const rate = Number(rateValue); setPeriod((current) => ({ ...current, rate })); api("/hours/period", { method: "PATCH", body: JSON.stringify({ rate }) }).catch(() => {}); };
   const saveEntry = (form) => { const previous = entries; const existing = entries.find((entry) => entry.date === form.date); setEntries(existing ? entries.map((entry) => entry.date === form.date ? { ...form, id: existing.id } : entry) : [...entries, { ...form, id: `temp-${form.date}` }]); setEntryModal(null); api("/hours/entries", { method: "PUT", body: JSON.stringify(toApiEntry(form)) }).then((saved) => setEntries((current) => current.map((entry) => entry.date === form.date ? fromApiEntry(saved) : entry))).catch(() => setEntries(previous)); };
