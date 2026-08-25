@@ -23,7 +23,12 @@
       "Bash(python -c \"from app.main import app; print\\('recreated via import'\\)\")",
       "PowerShell(Get-NetTCPConnection -LocalPort 8044 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; \"stopped\")",
       "PowerShell(Get-NetTCPConnection -LocalPort 8055 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; \"stopped\")",
-      "PowerShell(Get-NetTCPConnection -LocalPort 8066 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; \"stopped\")"
+      "PowerShell(Get-NetTCPConnection -LocalPort 8066 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; \"stopped\")",
+      "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/dashboard -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
+      "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/pomodoro/history -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
+      "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/pomodoro -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
+      "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/events -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
+      "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/hours -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')"
     ]
   }
 }
