@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,8 +14,10 @@ from .schemas import (
     DashboardOut,
     HabitCreate,
     HabitOut,
+    HabitUpdate,
     TaskCreate,
     TaskOut,
+    TaskUpdate,
     Token,
     TransactionCreate,
     TransactionOut,
@@ -33,7 +35,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",")],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -90,9 +92,9 @@ def me(user: User = Depends(current_user)) -> User:
 
 @app.get("/api/dashboard", response_model=DashboardOut)
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)) -> DashboardOut:
-    tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.due_date == date.today()).order_by(Task.completed, Task.id)).all()
+    tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.due_date, Task.completed, Task.id)).all()
     habits = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
-    transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc()).limit(8)).all()
+    transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc())).all()
     sessions = db.scalars(select(WorkSession).where(WorkSession.user_id == user.id, WorkSession.started_at >= datetime.utcnow() - timedelta(days=30))).all()
     balance = sum(item.amount if item.kind == "income" else -item.amount for item in transactions)
     return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, work_minutes=sum(item.minutes for item in sessions), balance=balance)
@@ -118,25 +120,55 @@ def complete_task(task_id: int, user: User = Depends(current_user), db: Session 
     return task
 
 
+@app.patch("/api/tasks/{task_id}", response_model=TaskOut)
+def update_task(task_id: int, payload: TaskUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Task:
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == user.id))
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(task, field, value)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@app.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == user.id))
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.delete(task)
+    db.commit()
+
+
 @app.post("/api/habits", response_model=HabitOut, status_code=status.HTTP_201_CREATED)
 def create_habit(payload: HabitCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
-    habit = Habit(user_id=user.id, name=payload.name.strip())
+    habit = Habit(user_id=user.id, name=payload.name.strip(), progress=0, history=[0] * 7)
     db.add(habit)
     db.commit()
     db.refresh(habit)
     return habit
 
 
-@app.patch("/api/habits/{habit_id}/check", response_model=HabitOut)
-def check_habit(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
+@app.patch("/api/habits/{habit_id}", response_model=HabitOut)
+def update_habit(habit_id: int, payload: HabitUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    habit.checked_today = not habit.checked_today
-    habit.streak = max(0, habit.streak + (1 if habit.checked_today else -1))
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(habit, field, value)
     db.commit()
     db.refresh(habit)
     return habit
+
+
+@app.delete("/api/habits/{habit_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_habit(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    db.delete(habit)
+    db.commit()
 
 
 @app.post("/api/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
@@ -146,3 +178,12 @@ def create_transaction(payload: TransactionCreate, user: User = Depends(current_
     db.commit()
     db.refresh(transaction)
     return transaction
+
+
+@app.delete("/api/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transaction(transaction_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    transaction = db.scalar(select(Transaction).where(Transaction.id == transaction_id, Transaction.user_id == user.id))
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    db.delete(transaction)
+    db.commit()

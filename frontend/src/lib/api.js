@@ -7,5 +7,6 @@ export async function api(path, options = {}) {
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
   });
   if (!response.ok) throw new Error((await response.json()).detail || "Request failed");
+  if (response.status === 204) return null;
   return response.json();
 }

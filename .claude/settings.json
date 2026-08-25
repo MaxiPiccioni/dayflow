@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./.venv/Scripts/python.exe -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(curl -s -D - https://dayflow-backend-aeii.onrender.com/api/health)",
+      "Bash(curl -s -D - -X POST https://dayflow-backend-aeii.onrender.com/api/auth/register -H \"Content-Type: application/json\" -d '{\"email\":\"diag-test@example.com\",\"full_name\":\"Diag Test\",\"password\":\"supersecret123\"}')",
+      "Bash(curl -s -D - -o /dev/null -X OPTIONS https://dayflow-backend-aeii.onrender.com/api/auth/register -H 'Origin: https://dayflow-frontend-wh2c.onrender.com' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type')"
+    ]
+  }
+}
