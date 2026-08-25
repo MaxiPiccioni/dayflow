@@ -108,9 +108,9 @@ class PomodoroOut(BaseModel):
 
 
 class PomodoroUpdate(BaseModel):
-    repetitions: int | None = Field(default=None, ge=1, le=20)
-    work: int | None = Field(default=None, ge=1, le=180)
-    break_time: int | None = Field(default=None, ge=1, le=60)
+    repetitions: int | None = Field(default=None, ge=0, le=20)
+    work: int | None = Field(default=None, ge=0, le=180)
+    break_time: int | None = Field(default=None, ge=0, le=60)
 
 
 class HourEntryCreate(BaseModel):

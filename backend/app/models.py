@@ -71,9 +71,9 @@ class PomodoroSettings(Base):
     __tablename__ = "pomodoro_settings"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
-    repetitions: Mapped[int] = mapped_column(Integer, default=4)
-    work: Mapped[int] = mapped_column(Integer, default=25)
-    break_time: Mapped[int] = mapped_column(Integer, default=5)
+    repetitions: Mapped[int] = mapped_column(Integer, default=0)
+    work: Mapped[int] = mapped_column(Integer, default=0)
+    break_time: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class PayPeriod(Base):
