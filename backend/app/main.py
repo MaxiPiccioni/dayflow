@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import Base, engine, get_db
 from .models import Habit, Task, Transaction, User, WorkSession
-from .rate_limit import rate_limit
+from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
     DashboardOut,
     HabitCreate,
@@ -38,6 +38,15 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 def current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     try:
         user_id = get_user_id(token)
@@ -54,7 +63,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/auth/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+@app.post("/api/auth/register", response_model=Token, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth_rate_limit)])
 def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
     email = payload.email.lower()
     if db.scalar(select(User).where(User.email == email)):
@@ -66,7 +75,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
     return Token(access_token=create_access_token(user.id))
 
 
-@app.post("/api/auth/login", response_model=Token)
+@app.post("/api/auth/login", response_model=Token, dependencies=[Depends(auth_rate_limit)])
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if not user or not verify_password(payload.password, user.password_hash):
