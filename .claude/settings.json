@@ -14,7 +14,11 @@
       "Bash(python -c ' *)",
       "Bash(powershell -NoProfile -Command \"Stop-Process -Id 26112 -Force -ErrorAction SilentlyContinue\")",
       "Bash(find /tmp /c/Users/maxip/AppData/Local/Temp -maxdepth 3 -iname \"*.png\" -newermt \"-15 minutes\" 2>/dev/null | head -20 *)",
-      "Read(//c/Users/maxip/AppData/Roaming/**)"
+      "Read(//c/Users/maxip/AppData/Roaming/**)",
+      "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\nTime: %{time_total}s\\\\n\" https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
+      "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
+      "Bash(curl -s -I https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")"
     ]
   }
 }

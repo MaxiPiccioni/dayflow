@@ -73,7 +73,7 @@ def current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
     return user
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
