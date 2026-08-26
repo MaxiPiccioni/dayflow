@@ -20,7 +20,7 @@ const tabs = [["resumen", "Resumen", LayoutDashboard], ["tareas", "Tareas", Chec
 const authors = ["Aristóteles", "Marie Curie", "Nikola Tesla", "Maya Angelou", "Peter Drucker", "Ada Lovelace", "Carl Sagan", "James Clear", "Eleanor Roosevelt", "Katherine Johnson"];
 const seeds = ["La constancia convierte una intención pequeña en una vida distinta.", "Cada bloque de atención es una inversión en tu futuro.", "El progreso no necesita ruido para estar ocurriendo.", "Una decisión clara hoy libera energía para mañana.", "La práctica paciente hace visible lo que antes parecía imposible."];
 const quotes = Array.from({ length: 500 }, (_, index) => ({ text: seeds[index % seeds.length], author: authors[index % authors.length] }));
-const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-500 dark:border-zinc-700";
+const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-lime-500 dark:border-zinc-700 dark:placeholder:text-zinc-500";
 
 let audioCtx = null;
 function getAudioContext() {
