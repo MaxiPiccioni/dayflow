@@ -361,7 +361,7 @@ def _get_or_create_open_period(db: Session, user: User) -> PayPeriod:
         return period
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
     if last:
-        start = _add_month(last.start)
+        start = last.end + timedelta(days=1)
         rate = last.rate
     else:
         start = date_type.today()
