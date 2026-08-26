@@ -64,12 +64,15 @@ body {
 }
 
 @media print {
+  body.print-hours * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
   body.print-hours .app-sidebar,
   body.print-hours .app-header { display: none !important; }
   body.print-hours .hours-module > *:not(.hours-calendar-card):not(.hours-summary),
   body.print-hours .hours-calendar-card > div:first-child button,
   body.print-hours .hours-calendar-card .hours-actions,
-  body.print-hours .hours-calendar-card .hours-legend { display: none !important; }
+  body.print-hours .hours-calendar-card .hours-legend,
+  body.print-hours .hours-calendar-card .hours-screen-calendar { display: none !important; }
+  body.print-hours .hours-calendar-card .hours-print-calendars { display: flex !important; gap: 12mm; }
   body.print-hours .hours-module { color: #18181b !important; }
   @page { size: A4; margin: 10mm; }
   body.print-hours .hours-module { max-height: 270mm; overflow: hidden; }
