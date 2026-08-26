@@ -461,3 +461,15 @@ def reopen_period(period_id: int, user: User = Depends(current_user), db: Sessio
     target.closed = False
     db.commit()
     return _build_hours_state(db, user)
+
+
+@app.delete("/api/hours/periods/{period_id}", response_model=HoursStateOut)
+def delete_period(period_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    period = db.scalar(select(PayPeriod).where(PayPeriod.id == period_id, PayPeriod.user_id == user.id))
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+    if not period.closed:
+        raise HTTPException(status_code=400, detail="Only closed periods can be deleted")
+    db.delete(period)
+    db.commit()
+    return _build_hours_state(db, user)
