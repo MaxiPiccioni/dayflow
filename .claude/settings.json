@@ -29,7 +29,9 @@
       "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/pomodoro -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
       "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/events -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
       "Bash(curl -s https://dayflow-backend-aeii.onrender.com/api/hours -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzg3NzcxOTQ2fQ.TG9v2jHvV1FUPa1MF-8cmZpw2P8QV2pxXjDc5Yt2qlw' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
-      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('entries:', d['entries']\\); print\\('period:', d['period']\\)\")"
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('entries:', d['entries']\\); print\\('period:', d['period']\\)\")",
+      "Bash(curl -s -i https://dayflow-backend-aeii.onrender.com/api/health --max-time 30)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8088 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; \"stopped\")"
     ]
   }
 }
