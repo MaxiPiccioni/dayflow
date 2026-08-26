@@ -148,6 +148,10 @@ class HourPaymentCreate(BaseModel):
     payment_date: date
 
 
+class HourPaymentRequest(HourPaymentCreate):
+    reference_date: date | None = None
+
+
 class HourPaymentOut(HourPaymentCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -176,6 +180,11 @@ class ClosedPeriodOut(BaseModel):
 
 class RateUpdate(BaseModel):
     rate: float = Field(ge=0)
+    reference_date: date | None = None
+
+
+class CloseRequest(BaseModel):
+    reference_date: date | None = None
 
 
 class HoursStateOut(BaseModel):

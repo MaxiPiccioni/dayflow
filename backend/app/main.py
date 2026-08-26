@@ -14,6 +14,7 @@ from .models import Event, Habit, HourEntry, HourPayment, PayPeriod, PomodoroLog
 from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
     ClosedPeriodOut,
+    CloseRequest,
     DashboardOut,
     EventCreate,
     EventOut,
@@ -23,8 +24,8 @@ from .schemas import (
     HabitUpdate,
     HourEntryCreate,
     HourEntryOut,
-    HourPaymentCreate,
     HourPaymentOut,
+    HourPaymentRequest,
     HoursStateOut,
     PayPeriodOut,
     PomodoroLogCreate,
@@ -328,17 +329,26 @@ def log_pomodoro_minutes(payload: PomodoroLogCreate, user: User = Depends(curren
     return PomodoroLogOut(date=row.log_date, minutes=row.minutes)
 
 
-def _add_month(value: date_type) -> date_type:
-    month = value.month + 1
-    year = value.year + (1 if month > 12 else 0)
-    month = month - 12 if month > 12 else month
+PERIOD_ANCHOR_DAY = 11
+
+
+def _shift_month(value: date_type, delta: int = 1) -> date_type:
+    total = value.month - 1 + delta
+    year = value.year + total // 12
+    month = total % 12 + 1
     day = min(value.day, calendar.monthrange(year, month)[1])
     return value.replace(year=year, month=month, day=day)
 
 
 def _period_end(start: date_type) -> date_type:
-    shifted = _add_month(start)
-    return shifted.replace(day=10)
+    shifted = _shift_month(start)
+    return shifted.replace(day=PERIOD_ANCHOR_DAY - 1)
+
+
+def _period_start_for(reference: date_type) -> date_type:
+    if reference.day >= PERIOD_ANCHOR_DAY:
+        return reference.replace(day=PERIOD_ANCHOR_DAY)
+    return _shift_month(reference, -1).replace(day=PERIOD_ANCHOR_DAY)
 
 
 def _entry_duration(entry: HourEntry) -> float:
@@ -355,17 +365,13 @@ def _entry_value(entry: HourEntry, rate: float) -> float:
     return _entry_duration(entry) * rate * (2 if entry.extra else 1)
 
 
-def _get_or_create_open_period(db: Session, user: User) -> PayPeriod:
-    period = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(False)))
-    if period:
-        return period
+def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
+    existing = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.start <= reference, PayPeriod.end >= reference))
+    if existing:
+        return existing
+    start = _period_start_for(reference)
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
-    if last:
-        start = last.end + timedelta(days=1)
-        rate = last.rate
-    else:
-        start = date_type.today()
-        rate = 0.0
+    rate = last.rate if last else 0.0
     period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
     db.add(period)
     db.commit()
@@ -383,8 +389,8 @@ def _close_period(db: Session, period: PayPeriod, user: User) -> None:
     period.closed = True
 
 
-def _build_hours_state(db: Session, user: User) -> HoursStateOut:
-    period = _get_or_create_open_period(db, user)
+def _build_hours_state(db: Session, user: User, reference: date_type) -> HoursStateOut:
+    period = _resolve_period(db, user, reference)
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id).order_by(HourEntry.entry_date)).all()
     payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id).order_by(HourPayment.payment_date)).all()
     closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
@@ -397,16 +403,17 @@ def _build_hours_state(db: Session, user: User) -> HoursStateOut:
 
 
 @app.get("/api/hours", response_model=HoursStateOut)
-def get_hours(user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    return _build_hours_state(db, user)
+def get_hours(reference_date: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    return _build_hours_state(db, user, reference_date or date_type.today())
 
 
 @app.patch("/api/hours/period", response_model=HoursStateOut)
 def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    period = _get_or_create_open_period(db, user)
+    reference = payload.reference_date or date_type.today()
+    period = _resolve_period(db, user, reference)
     period.rate = payload.rate
     db.commit()
-    return _build_hours_state(db, user)
+    return _build_hours_state(db, user, reference)
 
 
 @app.put("/api/hours/entries", response_model=HourEntryOut)
@@ -433,21 +440,33 @@ def delete_hour_entry(entry_id: int, user: User = Depends(current_user), db: Ses
 
 
 @app.post("/api/hours/payments", response_model=HoursStateOut, status_code=status.HTTP_201_CREATED)
-def create_payment(payload: HourPaymentCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    period = _get_or_create_open_period(db, user)
-    payment = HourPayment(user_id=user.id, period_id=period.id, **payload.model_dump())
+def create_payment(payload: HourPaymentRequest, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    reference = payload.reference_date or date_type.today()
+    period = _resolve_period(db, user, reference)
+    payment = HourPayment(user_id=user.id, period_id=period.id, amount=payload.amount, method=payload.method, payment_date=payload.payment_date)
     db.add(payment)
     db.commit()
-    return _build_hours_state(db, user)
+    return _build_hours_state(db, user, reference)
+
+
+@app.delete("/api/hours/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_payment(payment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    payment = db.scalar(select(HourPayment).where(HourPayment.id == payment_id, HourPayment.user_id == user.id))
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    db.delete(payment)
+    db.commit()
 
 
 @app.post("/api/hours/close", response_model=HoursStateOut)
-def close_period(user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    period = _get_or_create_open_period(db, user)
+def close_period(payload: CloseRequest, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    reference = payload.reference_date or date_type.today()
+    period = _resolve_period(db, user, reference)
+    if period.closed:
+        raise HTTPException(status_code=400, detail="Period already closed")
     _close_period(db, period, user)
     db.commit()
-    _get_or_create_open_period(db, user)
-    return _build_hours_state(db, user)
+    return _build_hours_state(db, user, date_type.today())
 
 
 @app.post("/api/hours/periods/{period_id}/reopen", response_model=HoursStateOut)
@@ -455,12 +474,9 @@ def reopen_period(period_id: int, user: User = Depends(current_user), db: Sessio
     target = db.scalar(select(PayPeriod).where(PayPeriod.id == period_id, PayPeriod.user_id == user.id))
     if not target:
         raise HTTPException(status_code=404, detail="Period not found")
-    current_open = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(False)))
-    if current_open and current_open.id != target.id:
-        _close_period(db, current_open, user)
     target.closed = False
     db.commit()
-    return _build_hours_state(db, user)
+    return _build_hours_state(db, user, target.start)
 
 
 @app.delete("/api/hours/periods/{period_id}", response_model=HoursStateOut)
@@ -476,3 +492,11 @@ def delete_period(period_id: int, user: User = Depends(current_user), db: Sessio
     db.delete(period)
     db.commit()
     return _build_hours_state(db, user)
+
+
+@app.get("/api/hours/periods/{period_id}/payments", response_model=list[HourPaymentOut])
+def get_period_payments(period_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HourPayment]:
+    period = db.scalar(select(PayPeriod).where(PayPeriod.id == period_id, PayPeriod.user_id == user.id))
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+    return db.scalars(select(HourPayment).where(HourPayment.period_id == period.id).order_by(HourPayment.payment_date)).all()
