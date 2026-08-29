@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-500 dark:border-zinc-700";
 
 export function AuthGate({ children }) {
-  const [status, setStatus] = useState(() => (typeof window !== "undefined" && localStorage.getItem("dayflow_token") ? "checking" : "anon"));
+  const [status, setStatus] = useState("checking");
   const [user, setUser] = useState(null);
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", fullName: "" });

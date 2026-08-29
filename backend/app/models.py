@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -14,8 +14,12 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     tasks: Mapped[list["Task"]] = relationship(cascade="all, delete-orphan")
+    categories: Mapped[list["Category"]] = relationship(cascade="all, delete-orphan")
     habits: Mapped[list["Habit"]] = relationship(cascade="all, delete-orphan")
+    habit_logs: Mapped[list["HabitLog"]] = relationship(cascade="all, delete-orphan")
     transactions: Mapped[list["Transaction"]] = relationship(cascade="all, delete-orphan")
+    savings: Mapped[list["SavingEntry"]] = relationship(cascade="all, delete-orphan")
+    saving_movements: Mapped[list["SavingMovement"]] = relationship(cascade="all, delete-orphan")
     events: Mapped[list["Event"]] = relationship(cascade="all, delete-orphan")
     pay_periods: Mapped[list["PayPeriod"]] = relationship(cascade="all, delete-orphan")
     hour_entries: Mapped[list["HourEntry"]] = relationship(cascade="all, delete-orphan")
@@ -30,10 +34,19 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200))
     due_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
-    category: Mapped[str] = mapped_column(String(50), default="Personal")
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    priority: Mapped[str] = mapped_column(String(20), default="medium")
+    priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class Category(Base):
+    __tablename__ = "categories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(50))
+    scope: Mapped[str] = mapped_column(String(20), default="agenda")
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class Habit(Base):
@@ -43,13 +56,17 @@ class Habit(Base):
     name: Mapped[str] = mapped_column(String(100))
     target: Mapped[int] = mapped_column(Integer, default=1)
     unit: Mapped[str] = mapped_column(String(30), default="veces")
-    count: Mapped[int] = mapped_column(Integer, default=0)
-    history: Mapped[list[int]] = mapped_column(JSON, default=list)
-    updated_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    logs: Mapped[list["HabitLog"]] = relationship(cascade="all, delete-orphan")
 
-    @property
-    def progress(self) -> int:
-        return round(self.count / self.target * 100) if self.target else 0
+
+class HabitLog(Base):
+    __tablename__ = "habit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    habit_id: Mapped[int] = mapped_column(ForeignKey("habits.id"), index=True)
+    log_date: Mapped[date] = mapped_column(Date, index=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Transaction(Base):
@@ -59,8 +76,28 @@ class Transaction(Base):
     description: Mapped[str] = mapped_column(String(200))
     amount: Mapped[float] = mapped_column(Float)
     kind: Mapped[str] = mapped_column(String(20))
-    category: Mapped[str] = mapped_column(String(50), default="General")
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    method: Mapped[str] = mapped_column(String(20), default="Efectivo")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SavingEntry(Base):
+    __tablename__ = "saving_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    start_amount: Mapped[float] = mapped_column(Float, default=0)
+    month: Mapped[str] = mapped_column(String(7), index=True)
+    movements: Mapped[list["SavingMovement"]] = relationship(cascade="all, delete-orphan")
+
+
+class SavingMovement(Base):
+    __tablename__ = "saving_movements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    saving_id: Mapped[int] = mapped_column(ForeignKey("saving_entries.id"), index=True)
+    amount: Mapped[float] = mapped_column(Float)
+    movement_date: Mapped[date] = mapped_column(Date, default=date.today)
 
 
 class Event(Base):
@@ -70,7 +107,7 @@ class Event(Base):
     title: Mapped[str] = mapped_column(String(200))
     event_date: Mapped[date] = mapped_column(Date, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
-    type: Mapped[str] = mapped_column(String(30), default="Personal")
+    type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     color: Mapped[str] = mapped_column(String(10), default="#d9f99d")
     done: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -126,4 +163,4 @@ class PomodoroLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     log_date: Mapped[date] = mapped_column(Date, index=True)
-    minutes: Mapped[int] = mapped_column(Integer, default=0)
+    seconds: Mapped[int] = mapped_column(Integer, default=0)

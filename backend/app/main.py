@@ -1,18 +1,22 @@
 import calendar
+from collections import defaultdict
 from datetime import date as date_type
 from datetime import timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import Base, engine, get_db
-from .models import Event, Habit, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, Task, Transaction, User
+from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, Task, Transaction, User
 from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
+    CategoryCreate,
+    CategoryOut,
+    CategoryUpdate,
     ClosedPeriodOut,
     CloseRequest,
     DashboardOut,
@@ -20,7 +24,10 @@ from .schemas import (
     EventOut,
     EventUpdate,
     HabitCreate,
+    HabitLogOut,
+    HabitLogUpdate,
     HabitOut,
+    HabitOverviewOut,
     HabitUpdate,
     HourEntryCreate,
     HourEntryOut,
@@ -33,6 +40,11 @@ from .schemas import (
     PomodoroOut,
     PomodoroUpdate,
     RateUpdate,
+    SavingEntryCreate,
+    SavingEntryOut,
+    SavingEntryUpdate,
+    SavingMovementCreate,
+    SavingMovementOut,
     TaskCreate,
     TaskOut,
     TaskUpdate,
@@ -109,29 +121,61 @@ def me(user: User = Depends(current_user)) -> User:
     return user
 
 
-def _roll_habit_day(habit: Habit, today: date_type) -> bool:
-    if habit.updated_on is None:
-        habit.updated_on = today
-        return False
-    if habit.updated_on < today:
-        history = [*habit.history, habit.progress]
-        habit.history = history[-7:]
-        habit.count = 0
-        habit.updated_on = today
-        return True
-    return False
+def _habit_logs_by_date(db: Session, habit_id: int) -> dict[date_type, int]:
+    logs = db.scalars(select(HabitLog).where(HabitLog.habit_id == habit_id)).all()
+    return {log.log_date: log.count for log in logs}
+
+
+def _build_habit_out(db: Session, habit: Habit, today: date_type) -> HabitOut:
+    by_date = _habit_logs_by_date(db, habit.id)
+    today_count = by_date.get(today, 0)
+    progress = round(today_count / habit.target * 100) if habit.target else 0
+    streak = 0
+    if today_count >= habit.target:
+        cursor = today
+        while by_date.get(cursor, 0) >= habit.target:
+            streak += 1
+            cursor -= timedelta(days=1)
+    return HabitOut(id=habit.id, name=habit.name, target=habit.target, unit=habit.unit, count=today_count, progress=progress, streak=streak, created_at=habit.created_at)
+
+
+def _saving_current_amount(db: Session, saving: SavingEntry) -> float:
+    moved = db.scalar(select(func.coalesce(func.sum(SavingMovement.amount), 0.0)).where(SavingMovement.saving_id == saving.id)) or 0.0
+    return saving.start_amount + moved
+
+
+def _build_saving_out(db: Session, saving: SavingEntry) -> SavingEntryOut:
+    current = _saving_current_amount(db, saving)
+    return SavingEntryOut(id=saving.id, name=saving.name, start_amount=saving.start_amount, current_amount=current, gain=current - saving.start_amount)
+
+
+def _rollover_savings(db: Session, user: User, current_month: str) -> None:
+    all_savings = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id).order_by(SavingEntry.month.desc())).all()
+    latest_by_name: dict[str, SavingEntry] = {}
+    for saving in all_savings:
+        latest_by_name.setdefault(saving.name, saving)
+    created = False
+    for saving in latest_by_name.values():
+        if saving.month < current_month:
+            current_amount = _saving_current_amount(db, saving)
+            db.add(SavingEntry(user_id=user.id, name=saving.name, start_amount=current_amount, month=current_month))
+            created = True
+    if created:
+        db.commit()
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)) -> DashboardOut:
     tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.due_date, Task.completed, Task.id)).all()
-    habits = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
+    habit_rows = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
     transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc())).all()
     today = date_type.today()
-    rolled = [_roll_habit_day(habit, today) for habit in habits]
-    if any(rolled):
-        db.commit()
-    return DashboardOut(tasks=tasks, habits=habits, transactions=transactions)
+    habits = [_build_habit_out(db, habit, today) for habit in habit_rows]
+    current_month = today.strftime("%Y-%m")
+    _rollover_savings(db, user, current_month)
+    saving_rows = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.month == current_month).order_by(SavingEntry.id)).all()
+    savings = [_build_saving_out(db, saving) for saving in saving_rows]
+    return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, savings=savings)
 
 
 @app.post("/api/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -175,39 +219,157 @@ def delete_task(task_id: int, user: User = Depends(current_user), db: Session = 
     db.commit()
 
 
+DEFAULT_CATEGORIES = {
+    "agenda": ["Trabajo", "Personal", "Foco", "Rutina"],
+}
+DEFAULT_FINANCE_CATEGORIES = {
+    "income": ["Salario", "Freelance", "Regalo", "Otro"],
+    "expense": ["Alimentación", "Transporte", "Servicios", "Ocio", "Otro"],
+}
+
+
+def _category_query(user_id: int, scope: str, kind: str | None):
+    query = select(Category).where(Category.user_id == user_id, Category.scope == scope)
+    return query.where(Category.kind.is_(None)) if kind is None else query.where(Category.kind == kind)
+
+
+@app.get("/api/categories", response_model=list[CategoryOut])
+def list_categories(scope: str = "agenda", kind: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Category]:
+    categories = db.scalars(_category_query(user.id, scope, kind).order_by(Category.name)).all()
+    if not categories:
+        defaults = DEFAULT_FINANCE_CATEGORIES.get(kind, []) if scope == "finance" else DEFAULT_CATEGORIES.get(scope, [])
+        for name in defaults:
+            db.add(Category(user_id=user.id, name=name, scope=scope, kind=kind))
+        db.commit()
+        categories = db.scalars(_category_query(user.id, scope, kind).order_by(Category.name)).all()
+    return categories
+
+
+@app.post("/api/categories", response_model=CategoryOut, status_code=status.HTTP_201_CREATED)
+def create_category(payload: CategoryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Category:
+    name = payload.name.strip()
+    exists = db.scalar(_category_query(user.id, payload.scope, payload.kind).where(Category.name.ilike(name)))
+    if exists:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
+    category = Category(user_id=user.id, name=name, scope=payload.scope, kind=payload.kind)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+@app.patch("/api/categories/{category_id}", response_model=CategoryOut)
+def rename_category(category_id: int, payload: CategoryUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Category:
+    category = db.scalar(select(Category).where(Category.id == category_id, Category.user_id == user.id))
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    name = payload.name.strip()
+    exists = db.scalar(_category_query(user.id, category.scope, category.kind).where(Category.name.ilike(name), Category.id != category.id))
+    if exists:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
+    old_name = category.name
+    category.name = name
+    if category.scope == "finance":
+        affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == old_name, Transaction.kind == category.kind)).all()
+        for transaction in affected_transactions:
+            transaction.category = name
+    else:
+        affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == old_name)).all()
+        for task in affected_tasks:
+            task.category = name
+        affected_events = db.scalars(select(Event).where(Event.user_id == user.id, Event.type == old_name)).all()
+        for event in affected_events:
+            event.type = name
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+@app.delete("/api/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_category(category_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    category = db.scalar(select(Category).where(Category.id == category_id, Category.user_id == user.id))
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    if category.scope == "finance":
+        affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == category.name, Transaction.kind == category.kind)).all()
+        for transaction in affected_transactions:
+            transaction.category = None
+    else:
+        affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == category.name)).all()
+        for task in affected_tasks:
+            task.category = None
+        affected_events = db.scalars(select(Event).where(Event.user_id == user.id, Event.type == category.name)).all()
+        for event in affected_events:
+            event.type = None
+    db.delete(category)
+    db.commit()
+
+
 @app.post("/api/habits", response_model=HabitOut, status_code=status.HTTP_201_CREATED)
-def create_habit(payload: HabitCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
-    habit = Habit(user_id=user.id, name=payload.name.strip(), target=payload.target, unit=payload.unit.strip(), count=0, history=[], updated_on=date_type.today())
+def create_habit(payload: HabitCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
+    habit = Habit(user_id=user.id, name=payload.name.strip(), target=payload.target, unit=payload.unit.strip())
     db.add(habit)
     db.commit()
     db.refresh(habit)
-    return habit
+    return _build_habit_out(db, habit, date_type.today())
 
 
 @app.patch("/api/habits/{habit_id}", response_model=HabitOut)
-def update_habit(habit_id: int, payload: HabitUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
+def update_habit(habit_id: int, payload: HabitUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    _roll_habit_day(habit, date_type.today())
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(habit, field, value)
-    habit.count = max(0, min(habit.count, habit.target))
     db.commit()
     db.refresh(habit)
-    return habit
+    return _build_habit_out(db, habit, date_type.today())
 
 
-@app.patch("/api/habits/{habit_id}/increment", response_model=HabitOut)
-def increment_habit(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Habit:
+@app.get("/api/habits/{habit_id}/logs", response_model=list[HabitLogOut])
+def list_habit_logs(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitLog]:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    _roll_habit_day(habit, date_type.today())
-    habit.count = 0 if habit.count >= habit.target else habit.count + 1
+    return db.scalars(select(HabitLog).where(HabitLog.habit_id == habit_id).order_by(HabitLog.log_date)).all()
+
+
+@app.put("/api/habits/{habit_id}/logs/{log_date}", response_model=HabitOut)
+def set_habit_log(habit_id: int, log_date: date_type, payload: HabitLogUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
+    habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    if log_date > date_type.today():
+        raise HTTPException(status_code=400, detail="No se pueden registrar días futuros")
+    if log_date < habit.created_at.date():
+        raise HTTPException(status_code=400, detail="No se pueden registrar días previos a la creación del hábito")
+    count = min(max(payload.count, 0), habit.target)
+    log = db.scalar(select(HabitLog).where(HabitLog.habit_id == habit_id, HabitLog.log_date == log_date))
+    if not log:
+        log = HabitLog(user_id=user.id, habit_id=habit_id, log_date=log_date, count=count)
+        db.add(log)
+    else:
+        log.count = count
     db.commit()
-    db.refresh(habit)
-    return habit
+    return _build_habit_out(db, habit, date_type.today())
+
+
+@app.get("/api/habits/overview", response_model=list[HabitOverviewOut])
+def habits_overview(days: int = 14, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitOverviewOut]:
+    today = date_type.today()
+    start = today - timedelta(days=days - 1)
+    habit_rows = db.scalars(select(Habit).where(Habit.user_id == user.id)).all()
+    logs = db.scalars(select(HabitLog).where(HabitLog.user_id == user.id, HabitLog.log_date >= start, HabitLog.log_date <= today)).all()
+    by_day: dict[date_type, dict[int, int]] = defaultdict(dict)
+    for log in logs:
+        by_day[log.log_date][log.habit_id] = log.count
+    result = []
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        active_habits = [habit for habit in habit_rows if habit.created_at.date() <= day]
+        completed = sum(1 for habit in active_habits if by_day.get(day, {}).get(habit.id, 0) >= habit.target)
+        result.append(HabitOverviewOut(log_date=day, completed=completed, total=len(active_habits)))
+    return result
 
 
 @app.delete("/api/habits/{habit_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -235,6 +397,70 @@ def delete_transaction(transaction_id: int, user: User = Depends(current_user), 
         raise HTTPException(status_code=404, detail="Transaction not found")
     db.delete(transaction)
     db.commit()
+
+
+@app.post("/api/savings", response_model=SavingEntryOut, status_code=status.HTTP_201_CREATED)
+def create_saving(payload: SavingEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
+    saving = SavingEntry(user_id=user.id, name=payload.name.strip(), start_amount=payload.start_amount, month=date_type.today().strftime("%Y-%m"))
+    db.add(saving)
+    db.commit()
+    db.refresh(saving)
+    return _build_saving_out(db, saving)
+
+
+@app.patch("/api/savings/{saving_id}", response_model=SavingEntryOut)
+def update_saving(saving_id: int, payload: SavingEntryUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
+    saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
+    if not saving:
+        raise HTTPException(status_code=404, detail="Saving not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(saving, field, value)
+    db.commit()
+    db.refresh(saving)
+    return _build_saving_out(db, saving)
+
+
+@app.delete("/api/savings/{saving_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_saving(saving_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
+    if not saving:
+        raise HTTPException(status_code=404, detail="Saving not found")
+    db.delete(saving)
+    db.commit()
+
+
+@app.get("/api/savings/{saving_id}/movements", response_model=list[SavingMovementOut])
+def list_saving_movements(saving_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[SavingMovement]:
+    saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
+    if not saving:
+        raise HTTPException(status_code=404, detail="Saving not found")
+    return db.scalars(select(SavingMovement).where(SavingMovement.saving_id == saving_id).order_by(SavingMovement.movement_date.desc(), SavingMovement.id.desc())).all()
+
+
+@app.post("/api/savings/{saving_id}/movements", response_model=SavingEntryOut, status_code=status.HTTP_201_CREATED)
+def create_saving_movement(saving_id: int, payload: SavingMovementCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
+    saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
+    if not saving:
+        raise HTTPException(status_code=404, detail="Saving not found")
+    if payload.amount == 0:
+        raise HTTPException(status_code=400, detail="El monto no puede ser cero")
+    movement = SavingMovement(user_id=user.id, saving_id=saving_id, amount=payload.amount, movement_date=payload.movement_date)
+    db.add(movement)
+    db.commit()
+    return _build_saving_out(db, saving)
+
+
+@app.delete("/api/savings/{saving_id}/movements/{movement_id}", response_model=SavingEntryOut)
+def delete_saving_movement(saving_id: int, movement_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
+    saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
+    if not saving:
+        raise HTTPException(status_code=404, detail="Saving not found")
+    movement = db.scalar(select(SavingMovement).where(SavingMovement.id == movement_id, SavingMovement.saving_id == saving_id))
+    if not movement:
+        raise HTTPException(status_code=404, detail="Movement not found")
+    db.delete(movement)
+    db.commit()
+    return _build_saving_out(db, saving)
 
 
 @app.get("/api/events", response_model=list[EventOut])
@@ -310,23 +536,24 @@ def update_pomodoro_settings(payload: PomodoroUpdate, user: User = Depends(curre
 @app.get("/api/pomodoro/history", response_model=list[PomodoroLogOut])
 def get_pomodoro_history(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[PomodoroLogOut]:
     today = date_type.today()
-    start = today - timedelta(days=6)
-    rows = db.scalars(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date >= start, PomodoroLog.log_date <= today)).all()
-    by_date = {row.log_date: row.minutes for row in rows}
-    return [PomodoroLogOut(date=start + timedelta(days=offset), minutes=by_date.get(start + timedelta(days=offset), 0)) for offset in range(7)]
+    start = today - timedelta(days=(today.weekday() + 1) % 7)
+    end = start + timedelta(days=6)
+    rows = db.scalars(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date >= start, PomodoroLog.log_date <= end)).all()
+    by_date = {row.log_date: row.seconds for row in rows}
+    return [PomodoroLogOut(date=start + timedelta(days=offset), seconds=by_date.get(start + timedelta(days=offset), 0)) for offset in range(7)]
 
 
 @app.post("/api/pomodoro/log", response_model=PomodoroLogOut)
-def log_pomodoro_minutes(payload: PomodoroLogCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroLogOut:
+def log_pomodoro_seconds(payload: PomodoroLogCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroLogOut:
     today = date_type.today()
     row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today))
     if not row:
-        row = PomodoroLog(user_id=user.id, log_date=today, minutes=0)
+        row = PomodoroLog(user_id=user.id, log_date=today, seconds=0)
         db.add(row)
-    row.minutes += payload.minutes
+    row.seconds += payload.seconds
     db.commit()
     db.refresh(row)
-    return PomodoroLogOut(date=row.log_date, minutes=row.minutes)
+    return PomodoroLogOut(date=row.log_date, seconds=row.seconds)
 
 
 PERIOD_ANCHOR_DAY = 11
