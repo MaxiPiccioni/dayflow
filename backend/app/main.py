@@ -128,8 +128,7 @@ def _habit_logs_by_date(db: Session, habit_id: int) -> dict[date_type, int]:
     return {log.log_date: log.count for log in logs}
 
 
-def _build_habit_out(db: Session, habit: Habit, today: date_type) -> HabitOut:
-    by_date = _habit_logs_by_date(db, habit.id)
+def _habit_out_from_logs(habit: Habit, by_date: dict[date_type, int], today: date_type) -> HabitOut:
     today_count = by_date.get(today, 0)
     progress = round(today_count / habit.target * 100) if habit.target else 0
     streak = 0
@@ -141,14 +140,42 @@ def _build_habit_out(db: Session, habit: Habit, today: date_type) -> HabitOut:
     return HabitOut(id=habit.id, name=habit.name, target=habit.target, unit=habit.unit, count=today_count, progress=progress, streak=streak, created_at=habit.created_at)
 
 
+def _build_habit_out(db: Session, habit: Habit, today: date_type) -> HabitOut:
+    return _habit_out_from_logs(habit, _habit_logs_by_date(db, habit.id), today)
+
+
+def _habit_logs_by_habit_id(db: Session, habit_ids: list[int]) -> dict[int, dict[date_type, int]]:
+    if not habit_ids:
+        return {}
+    logs = db.scalars(select(HabitLog).where(HabitLog.habit_id.in_(habit_ids))).all()
+    by_habit: dict[int, dict[date_type, int]] = defaultdict(dict)
+    for log in logs:
+        by_habit[log.habit_id][log.log_date] = log.count
+    return by_habit
+
+
+def _saving_out_from_amount(saving: SavingEntry, current: float) -> SavingEntryOut:
+    return SavingEntryOut(id=saving.id, name=saving.name, start_amount=saving.start_amount, current_amount=current, gain=current - saving.start_amount)
+
+
 def _saving_current_amount(db: Session, saving: SavingEntry) -> float:
     moved = db.scalar(select(func.coalesce(func.sum(SavingMovement.amount), 0.0)).where(SavingMovement.saving_id == saving.id)) or 0.0
     return saving.start_amount + moved
 
 
 def _build_saving_out(db: Session, saving: SavingEntry) -> SavingEntryOut:
-    current = _saving_current_amount(db, saving)
-    return SavingEntryOut(id=saving.id, name=saving.name, start_amount=saving.start_amount, current_amount=current, gain=current - saving.start_amount)
+    return _saving_out_from_amount(saving, _saving_current_amount(db, saving))
+
+
+def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int, float]:
+    if not saving_ids:
+        return {}
+    rows = db.execute(
+        select(SavingMovement.saving_id, func.coalesce(func.sum(SavingMovement.amount), 0.0))
+        .where(SavingMovement.saving_id.in_(saving_ids))
+        .group_by(SavingMovement.saving_id)
+    ).all()
+    return dict(rows)
 
 
 def _rollover_savings(db: Session, user: User, current_month: str) -> None:
@@ -156,14 +183,14 @@ def _rollover_savings(db: Session, user: User, current_month: str) -> None:
     latest_by_name: dict[str, SavingEntry] = {}
     for saving in all_savings:
         latest_by_name.setdefault(saving.name, saving)
-    created = False
-    for saving in latest_by_name.values():
-        if saving.month < current_month:
-            current_amount = _saving_current_amount(db, saving)
-            db.add(SavingEntry(user_id=user.id, name=saving.name, start_amount=current_amount, month=current_month))
-            created = True
-    if created:
-        db.commit()
+    to_roll = [saving for saving in latest_by_name.values() if saving.month < current_month]
+    if not to_roll:
+        return
+    moved_by_id = _moved_amounts_by_saving_id(db, [saving.id for saving in to_roll])
+    for saving in to_roll:
+        current_amount = saving.start_amount + moved_by_id.get(saving.id, 0.0)
+        db.add(SavingEntry(user_id=user.id, name=saving.name, start_amount=current_amount, month=current_month))
+    db.commit()
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)
@@ -172,11 +199,13 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     habit_rows = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
     transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc())).all()
     today = date_type.today()
-    habits = [_build_habit_out(db, habit, today) for habit in habit_rows]
+    logs_by_habit = _habit_logs_by_habit_id(db, [habit.id for habit in habit_rows])
+    habits = [_habit_out_from_logs(habit, logs_by_habit.get(habit.id, {}), today) for habit in habit_rows]
     current_month = today.strftime("%Y-%m")
     _rollover_savings(db, user, current_month)
     saving_rows = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.month == current_month).order_by(SavingEntry.id)).all()
-    savings = [_build_saving_out(db, saving) for saving in saving_rows]
+    moved_by_saving = _moved_amounts_by_saving_id(db, [saving.id for saving in saving_rows])
+    savings = [_saving_out_from_amount(saving, saving.start_amount + moved_by_saving.get(saving.id, 0.0)) for saving in saving_rows]
     return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, savings=savings)
 
 
