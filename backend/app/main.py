@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import Base, engine, get_db
+from .database import get_db
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
 from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
@@ -60,7 +60,6 @@ from .schemas import (
 )
 from .security import create_access_token, get_user_id, hash_password, verify_password
 
-Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
