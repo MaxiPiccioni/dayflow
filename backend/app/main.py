@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import Base, engine, get_db
-from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, Task, Transaction, User
+from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
 from .rate_limit import auth_rate_limit, rate_limit
 from .schemas import (
     CategoryCreate,
@@ -45,6 +45,9 @@ from .schemas import (
     SavingEntryUpdate,
     SavingMovementCreate,
     SavingMovementOut,
+    ShoppingItemCreate,
+    ShoppingItemOut,
+    ShoppingItemUpdate,
     TaskCreate,
     TaskOut,
     TaskUpdate,
@@ -273,6 +276,10 @@ def rename_category(category_id: int, payload: CategoryUpdate, user: User = Depe
         affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == old_name, Transaction.kind == category.kind)).all()
         for transaction in affected_transactions:
             transaction.category = name
+    elif category.scope == "shopping":
+        affected_items = db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id, ShoppingItem.category == old_name)).all()
+        for item in affected_items:
+            item.category = name
     else:
         affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == old_name)).all()
         for task in affected_tasks:
@@ -294,6 +301,10 @@ def delete_category(category_id: int, user: User = Depends(current_user), db: Se
         affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == category.name, Transaction.kind == category.kind)).all()
         for transaction in affected_transactions:
             transaction.category = None
+    elif category.scope == "shopping":
+        affected_items = db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id, ShoppingItem.category == category.name)).all()
+        for item in affected_items:
+            item.category = None
     else:
         affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == category.name)).all()
         for task in affected_tasks:
@@ -378,6 +389,41 @@ def delete_habit(habit_id: int, user: User = Depends(current_user), db: Session 
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
     db.delete(habit)
+    db.commit()
+
+
+@app.get("/api/shopping-items", response_model=list[ShoppingItemOut])
+def list_shopping_items(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[ShoppingItem]:
+    return db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id).order_by(ShoppingItem.name)).all()
+
+
+@app.post("/api/shopping-items", response_model=ShoppingItemOut, status_code=status.HTTP_201_CREATED)
+def create_shopping_item(payload: ShoppingItemCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> ShoppingItem:
+    item = ShoppingItem(user_id=user.id, name=payload.name.strip(), category=payload.category, stock=payload.stock, force_list=payload.force_list)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.patch("/api/shopping-items/{item_id}", response_model=ShoppingItemOut)
+def update_shopping_item(item_id: int, payload: ShoppingItemUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> ShoppingItem:
+    item = db.scalar(select(ShoppingItem).where(ShoppingItem.id == item_id, ShoppingItem.user_id == user.id))
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, field, value)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.delete("/api/shopping-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_shopping_item(item_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    item = db.scalar(select(ShoppingItem).where(ShoppingItem.id == item_id, ShoppingItem.user_id == user.id))
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    db.delete(item)
     db.commit()
 
 

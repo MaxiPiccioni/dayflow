@@ -12,6 +12,11 @@ const fromApiEntry = (entry) => ({ id: entry.id, date: entry.entry_date, from: e
 const fromApiPayment = (payment) => ({ id: payment.id, amount: payment.amount, method: payment.method, date: payment.payment_date });
 const fromApiClosedPeriod = (item) => ({ id: item.id, start: item.start, end: item.end, rate: item.rate, totalHours: item.total_hours, expected: item.expected, paid: item.paid, balance: item.balance });
 
+function todayIso() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 const PERIOD_ANCHOR_DAY = 11;
 const shiftMonthDate = (dateObj, delta) => { const next = new Date(dateObj); next.setMonth(next.getMonth() + delta); return next; };
 const formatDateLocal = (dateObj) => `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
@@ -76,7 +81,7 @@ function PaymentSelect({ value, onChange }) { const [open, setOpen] = useState(f
 function Saldos({ payments, addPayment, removePayment, readOnly }) { const [amount, setAmount] = useState(""); const [method, setMethod] = useState("Transferencia"); const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const submit = () => { if (Number(amount) <= 0) return; addPayment({ amount: Number(amount), method, date }); setAmount(""); }; return <Card className="hours-saldos"><CardHeader eyebrow="Pagos recibidos" title="Saldos" />{readOnly ? <p className="text-sm text-amber-600">Este período está cerrado. Reabrilo para modificar los pagos.</p> : <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]"><input type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Monto" className={inputClass} /><DatePicker value={date} onChange={setDate} /><PaymentSelect value={method} onChange={setMethod} /><button onClick={submit} aria-label="Agregar pago" className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"><Plus size={16} /></button></div>}{payments.length ? <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex items-center justify-between border-t border-zinc-100 pt-2 text-sm dark:border-zinc-800"><span>{payment.date} · {payment.method}</span><div className="flex items-center gap-3"><strong className="text-lime-600">$ {payment.amount.toLocaleString("es-AR")}</strong>{!readOnly && <button onClick={() => removePayment(payment.id)} aria-label="Eliminar pago" title="Eliminar pago" className="text-zinc-400 hover:text-red-500"><X size={14} /></button>}</div></div>)}</div> : <p className="mt-4 text-sm text-zinc-400">Todavía no registraste pagos.</p>}</Card>; }
 
 export function HoursPanel({ period, setPeriod, payments, setPayments, entries, setEntries, closedPeriods, setClosedPeriods, onSaveEntry, onRemoveEntry, compact = false }) {
-  const [selectedDate, setSelectedDate] = useState(period.start);
+  const [selectedDate, setSelectedDate] = useState(todayIso);
   const [entryModal, setEntryModal] = useState(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);

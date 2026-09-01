@@ -52,7 +52,7 @@ class TaskOut(TaskCreate):
 
 class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=50)
-    scope: str = Field(default="agenda", pattern="^(agenda|finance)$")
+    scope: str = Field(default="agenda", pattern="^(agenda|finance|shopping)$")
     kind: str | None = Field(default=None, pattern="^(income|expense)$")
 
 
@@ -105,6 +105,25 @@ class HabitOverviewOut(BaseModel):
     log_date: date
     completed: int
     total: int
+
+
+class ShoppingItemCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    category: str | None = Field(default=None, max_length=50)
+    stock: int = Field(default=0, ge=0)
+    force_list: bool = False
+
+
+class ShoppingItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    category: str | None = Field(default=None, max_length=50)
+    stock: int | None = Field(default=None, ge=0)
+    force_list: bool | None = None
+
+
+class ShoppingItemOut(ShoppingItemCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
 
 
 class TransactionCreate(BaseModel):

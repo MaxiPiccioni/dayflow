@@ -25,6 +25,7 @@ class User(Base):
     hour_entries: Mapped[list["HourEntry"]] = relationship(cascade="all, delete-orphan")
     hour_payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
     pomodoro_logs: Mapped[list["PomodoroLog"]] = relationship(cascade="all, delete-orphan")
+    shopping_items: Mapped[list["ShoppingItem"]] = relationship(cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -164,3 +165,13 @@ class PomodoroLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     log_date: Mapped[date] = mapped_column(Date, index=True)
     seconds: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ShoppingItem(Base):
+    __tablename__ = "shopping_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    stock: Mapped[int] = mapped_column(Integer, default=0)
+    force_list: Mapped[bool] = mapped_column(Boolean, default=False)
