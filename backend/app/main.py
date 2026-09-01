@@ -20,7 +20,7 @@ from .schemas import (
     ClosedPeriodOut,
     CloseRequest,
     DashboardOut,
-    EventCreate,
+    EventCreatePayload,
     EventOut,
     EventUpdate,
     HabitCreate,
@@ -48,7 +48,7 @@ from .schemas import (
     ShoppingItemCreate,
     ShoppingItemOut,
     ShoppingItemUpdate,
-    TaskCreate,
+    TaskCreatePayload,
     TaskOut,
     TaskUpdate,
     Token,
@@ -209,13 +209,27 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, savings=savings)
 
 
-@app.post("/api/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Task:
-    task = Task(user_id=user.id, **payload.model_dump())
-    db.add(task)
+REPEAT_WEEKDAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+REPEAT_HORIZON_DAYS = 90
+
+
+def _repeat_occurrence_dates(start: date_type, repeat_days: list[str] | None) -> list[date_type]:
+    if not repeat_days:
+        return [start]
+    weekdays = {REPEAT_WEEKDAY_INDEX[day] for day in repeat_days}
+    return [day for day in (start + timedelta(days=offset) for offset in range(REPEAT_HORIZON_DAYS + 1)) if day.weekday() in weekdays]
+
+
+@app.post("/api/tasks", response_model=list[TaskOut], status_code=status.HTTP_201_CREATED)
+def create_task(payload: TaskCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Task]:
+    data = payload.model_dump(exclude={"repeat_days"})
+    occurrences = _repeat_occurrence_dates(payload.due_date, payload.repeat_days)
+    tasks = [Task(user_id=user.id, **{**data, "due_date": occurrence}) for occurrence in occurrences]
+    db.add_all(tasks)
     db.commit()
-    db.refresh(task)
-    return task
+    for task in tasks:
+        db.refresh(task)
+    return tasks
 
 
 @app.patch("/api/tasks/{task_id}/complete", response_model=TaskOut)
@@ -542,13 +556,16 @@ def list_events(user: User = Depends(current_user), db: Session = Depends(get_db
     return db.scalars(select(Event).where(Event.user_id == user.id).order_by(Event.event_date, Event.time)).all()
 
 
-@app.post("/api/events", response_model=EventOut, status_code=status.HTTP_201_CREATED)
-def create_event(payload: EventCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Event:
-    event = Event(user_id=user.id, **payload.model_dump())
-    db.add(event)
+@app.post("/api/events", response_model=list[EventOut], status_code=status.HTTP_201_CREATED)
+def create_event(payload: EventCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Event]:
+    data = payload.model_dump(exclude={"repeat_days"})
+    occurrences = _repeat_occurrence_dates(payload.event_date, payload.repeat_days)
+    events = [Event(user_id=user.id, **{**data, "event_date": occurrence}) for occurrence in occurrences]
+    db.add_all(events)
     db.commit()
-    db.refresh(event)
-    return event
+    for event in events:
+        db.refresh(event)
+    return events
 
 
 @app.patch("/api/events/{event_id}/toggle", response_model=EventOut)

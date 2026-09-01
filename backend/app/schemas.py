@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -48,6 +49,13 @@ class TaskOut(TaskCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     completed: bool
+
+
+WEEKDAY_CODES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+class TaskCreatePayload(TaskCreate):
+    repeat_days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | None = None
 
 
 class CategoryCreate(BaseModel):
@@ -197,6 +205,10 @@ class EventOut(EventCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     done: bool
+
+
+class EventCreatePayload(EventCreate):
+    repeat_days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | None = None
 
 
 class PomodoroOut(BaseModel):

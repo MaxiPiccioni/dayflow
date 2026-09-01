@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
 import { Select as ShadSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { HoursPanel } from "@/components/hours-panel";
 import { ShoppingPanel } from "@/components/shopping-panel";
 import { AuthGate } from "@/components/auth-gate";
@@ -133,7 +134,7 @@ function playAlarmSound() {
 }
 
 const fromApiTask = (task) => ({ id: task.id, title: task.title, date: task.due_date, time: task.time, category: task.category, priority: task.priority, done: task.completed, notes: task.notes || "" });
-const toApiTask = (task) => ({ title: task.title, due_date: task.date, time: task.time, category: task.category || null, priority: task.priority || null, notes: task.notes || null });
+const toApiTask = (task) => ({ title: task.title, due_date: task.date, time: task.time, category: task.category || null, priority: task.priority || null, notes: task.notes || null, ...(task.repeat_days ? { repeat_days: task.repeat_days } : {}) });
 const fromApiHabit = (habit) => ({ id: habit.id, name: habit.name, target: habit.target, unit: habit.unit, count: habit.count, progress: habit.progress, streak: habit.streak, createdAt: habit.created_at });
 const fromApiHabitOverview = (item) => ({ date: item.log_date, completed: item.completed, total: item.total });
 const fromApiTransaction = (tx) => ({ id: tx.id, description: tx.description, amount: tx.amount, kind: tx.kind, category: tx.category, method: tx.method, createdAt: tx.created_at });
@@ -141,7 +142,7 @@ const fromApiSaving = (saving) => ({ id: saving.id, name: saving.name, start: sa
 const toApiSaving = (saving) => ({ name: saving.name, start_amount: saving.start });
 const fromApiSavingMovement = (movement) => ({ id: movement.id, amount: movement.amount, date: movement.movement_date });
 const fromApiEvent = (event) => ({ id: event.id, title: event.title, date: event.event_date, time: event.time, type: event.type, color: event.color, done: event.done });
-const toApiEvent = (event) => ({ title: event.title, event_date: event.date, time: event.time, type: event.type || null, color: event.color });
+const toApiEvent = (event) => ({ title: event.title, event_date: event.date, time: event.time, type: event.type || null, color: event.color, ...(event.repeat_days ? { repeat_days: event.repeat_days } : {}) });
 const fromApiSettings = (settings) => ({ repetitions: settings.repetitions, work: settings.work, breakTime: settings.break_time });
 const toApiSettings = (settings) => ({ repetitions: settings.repetitions, work: settings.work, break_time: settings.breakTime });
 const fromApiEntry = (entry) => ({ id: entry.id, date: entry.entry_date, from: entry.from_time, to: entry.to_time, hours: entry.hours === null ? "" : entry.hours, extra: entry.extra, holiday: entry.holiday });
@@ -151,13 +152,103 @@ const fromApiClosedPeriod = (period) => ({ id: period.id, start: period.start, e
 
 function DayModal({ date, tasks, events, openTask, openEvent, close }) { const dayTasks = tasks.filter((task) => task.date === date); const dayEvents = events.filter((event) => event.date === date); return <Modal title={`Agenda del ${date}`} close={close}><div className="mt-5 space-y-2">{dayTasks.length ? dayTasks.map((task) => <div key={`task-${task.id}`} onDoubleClick={() => { close(); openTask(task, date); }} className="cursor-pointer rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800"><span className="mr-3 text-xs text-zinc-400">{task.time}</span>{task.title}</div>) : null}{dayEvents.length ? dayEvents.map((event) => <div key={`event-${event.id}`} onDoubleClick={() => { close(); openEvent(event, date); }} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 text-sm" style={{ backgroundColor: `${event.color}55` }}><span className="h-6 w-1 rounded-full" style={{ backgroundColor: event.color }} /><span className="text-xs text-zinc-500">{event.time}</span><span className="flex-1">{event.title}</span></div>) : null}{!dayTasks.length && !dayEvents.length && <p className="py-4 text-sm text-zinc-500">No hay tareas ni eventos para este día.</p>}</div><div className="mt-6 flex gap-2"><button onClick={() => { close(); openTask(null, date); }} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white"><Plus size={16} /> Agregar tarea</button><button onClick={() => { close(); openEvent(null, date); }} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-zinc-200 py-3 text-sm font-semibold dark:border-zinc-700"><Plus size={16} /> Agregar evento</button></div></Modal>; }
 
-function EventModal({ event, date, categories, save, remove, close }) { const [form, setForm] = useState(event || { title: "", date, time: "09:00", type: "", color: "#d9f99d", done: false }); const update = (key, value) => setForm({ ...form, [key]: value }); const submit = (submitEvent) => { submitEvent.preventDefault(); if (form.title.trim()) save({ ...form, title: form.title.trim(), id: form.id || Date.now(), done: form.done || false }); }; const typeOptions = [{ value: "", label: "Sin categoría" }, ...categories.map((category) => ({ value: category.name, label: category.name }))]; return <Modal title={event ? "Editar evento" : "Nuevo evento"} close={close}><form onSubmit={submit}><div className="mt-5 space-y-3"><input autoFocus value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="Nombre del evento" className={inputClass} /><div className="grid grid-cols-2 gap-3"><label className="text-xs text-zinc-500">Fecha<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} className={`${inputClass} mt-1`} /></label><label className="text-xs text-zinc-500">Horario<input type="time" value={form.time} onChange={(event) => update("time", event.target.value)} className={`${inputClass} mt-1`} /></label><Select label="Categoría" value={form.type || ""} onChange={(value) => update("type", value)} options={typeOptions} /></div><div><p className="text-xs text-zinc-500">Color del evento</p><div className="mt-2 flex gap-3">{[["#d9f99d", "Lima"], ["#bfdbfe", "Azul"], ["#fbcfe8", "Rosa"], ["#fde68a", "Amarillo"], ["#ddd6fe", "Lavanda"]].map(([color, label]) => <button key={color} type="button" aria-label={label} onClick={() => update("color", color)} className={`h-8 w-8 rounded-full border-2 ${form.color === color ? "border-zinc-900 ring-2 ring-zinc-300" : "border-white"}`} style={{ backgroundColor: color }} />)}</div></div></div><div className="mt-6 flex gap-2">{event && <button type="button" onClick={() => remove(event.id)} className="rounded-xl border border-red-200 px-4 py-3 text-sm text-red-600">Eliminar</button>}<button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white">Guardar evento</button></div></form></Modal>; }
+const WEEKDAY_REPEAT_OPTIONS = [["mon", "L"], ["tue", "M"], ["wed", "X"], ["thu", "J"], ["fri", "V"], ["sat", "S"], ["sun", "D"]];
+
+function RepeatField({ enabled, setEnabled, days, setDays }) {
+  const toggleDay = (code) => setDays(days.includes(code) ? days.filter((day) => day !== code) : [...days, code]);
+  return (
+    <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Repetir</span>
+        <Switch checked={enabled} onChange={setEnabled} label="Repetir" />
+      </div>
+      {enabled && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {WEEKDAY_REPEAT_OPTIONS.map(([code, label]) => (
+            <button key={code} type="button" onClick={() => toggleDay(code)} className={`grid h-8 w-8 place-items-center rounded-full text-xs font-semibold transition-colors ${days.includes(code) ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>{label}</button>
+          ))}
+        </div>
+      )}
+      {enabled && !days.length && <p className="mt-2 text-xs text-zinc-400">Elegí al menos un día de la semana.</p>}
+    </div>
+  );
+}
+
+function EventModal({ event, date, categories, save, remove, close }) {
+  const [form, setForm] = useState(event || { title: "", date, time: "09:00", type: "", color: "#d9f99d", done: false });
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [repeatDays, setRepeatDays] = useState([]);
+  const update = (key, value) => setForm({ ...form, [key]: value });
+  const submit = (submitEvent) => {
+    submitEvent.preventDefault();
+    if (!form.title.trim()) return;
+    const repeat_days = !event && repeatEnabled && repeatDays.length ? repeatDays : undefined;
+    save({ ...form, title: form.title.trim(), id: form.id || Date.now(), done: form.done || false, repeat_days });
+  };
+  const typeOptions = [{ value: "", label: "Sin categoría" }, ...categories.map((category) => ({ value: category.name, label: category.name }))];
+  return (
+    <Modal title={event ? "Editar evento" : "Nuevo evento"} close={close}>
+      <form onSubmit={submit}>
+        <div className="mt-5 space-y-3">
+          <input autoFocus value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="Nombre del evento" className={inputClass} />
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-zinc-500">Fecha<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} className={`${inputClass} mt-1`} /></label>
+            <label className="text-xs text-zinc-500">Horario<input type="time" value={form.time} onChange={(event) => update("time", event.target.value)} className={`${inputClass} mt-1`} /></label>
+            <Select label="Categoría" value={form.type || ""} onChange={(value) => update("type", value)} options={typeOptions} />
+          </div>
+          <div>
+            <p className="text-xs text-zinc-500">Color del evento</p>
+            <div className="mt-2 flex gap-3">{[["#d9f99d", "Lima"], ["#bfdbfe", "Azul"], ["#fbcfe8", "Rosa"], ["#fde68a", "Amarillo"], ["#ddd6fe", "Lavanda"]].map(([color, label]) => <button key={color} type="button" aria-label={label} onClick={() => update("color", color)} className={`h-8 w-8 rounded-full border-2 ${form.color === color ? "border-zinc-900 ring-2 ring-zinc-300" : "border-white"}`} style={{ backgroundColor: color }} />)}</div>
+          </div>
+          {!event && <RepeatField enabled={repeatEnabled} setEnabled={setRepeatEnabled} days={repeatDays} setDays={setRepeatDays} />}
+        </div>
+        <div className="mt-6 flex gap-2">
+          {event && <button type="button" onClick={() => remove(event.id)} className="rounded-xl border border-red-200 px-4 py-3 text-sm text-red-600">Eliminar</button>}
+          <button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white">Guardar evento</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function Select({ label, value, onChange, options, placeholder = "Seleccionar..." }) { const [open, setOpen] = useState(false); const normalized = options.map((option) => typeof option === "string" ? { value: option, label: option } : option); const selected = normalized.find((option) => option.value === value); return <div className="relative text-xs text-zinc-500"><span>{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)} className={`${inputClass} mt-1 flex items-center justify-between text-left ${selected ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400"}`}>{selected?.label || placeholder}<ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} /></button>{open && <div role="listbox" className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">{normalized.map((option) => <button type="button" role="option" aria-selected={option.value === value} key={option.value} onClick={() => { onChange(option.value); setOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${option.value === value ? "bg-zinc-100 font-medium dark:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}>{option.label}</button>)}</div>}</div>; }
 
 const PRIORITY_OPTIONS = [{ value: "", label: "Sin importancia" }, { value: "Alta", label: "Alta" }, { value: "Media", label: "Media" }, { value: "Baja", label: "Baja" }];
 
-function TaskModal({ task, date, categories, save, remove, close }) { const [form, setForm] = useState(task || { title: "", date, time: "09:00", category: "", priority: "", notes: "" }); const update = (key, value) => setForm({ ...form, [key]: value }); const submit = (event) => { event.preventDefault(); if (form.title.trim()) save({ ...form, title: form.title.trim(), id: form.id || Date.now(), done: form.done || false }); }; const categoryOptions = [{ value: "", label: "Sin categoría" }, ...categories.map((category) => ({ value: category.name, label: category.name }))]; return <Modal title={task ? "Detalles de tarea" : "Nueva tarea"} close={close}><form onSubmit={submit}><div className="mt-5 space-y-3"><input autoFocus value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="¿Qué necesitas hacer?" className={inputClass} /><textarea value={form.notes || ""} onChange={(event) => update("notes", event.target.value)} placeholder="Notas" rows="3" className={inputClass} /><div className="grid grid-cols-2 gap-3"><label className="text-xs text-zinc-500">Fecha<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} className={`${inputClass} mt-1`} /></label><label className="text-xs text-zinc-500">Horario<input type="time" value={form.time} onChange={(event) => update("time", event.target.value)} className={`${inputClass} mt-1`} /></label><Select label="Categoría" value={form.category || ""} onChange={(value) => update("category", value)} options={categoryOptions} /><Select label="Importancia" value={form.priority || ""} onChange={(value) => update("priority", value)} options={PRIORITY_OPTIONS} /></div></div><div className="mt-6 flex gap-2">{task && <button type="button" onClick={() => remove(task.id)} className="rounded-xl border border-red-200 px-4 py-3 text-sm text-red-600">Eliminar</button>}<button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white">Guardar</button></div></form></Modal>; }
+function TaskModal({ task, date, categories, save, remove, close }) {
+  const [form, setForm] = useState(task || { title: "", date, time: "09:00", category: "", priority: "", notes: "" });
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [repeatDays, setRepeatDays] = useState([]);
+  const update = (key, value) => setForm({ ...form, [key]: value });
+  const submit = (event) => {
+    event.preventDefault();
+    if (!form.title.trim()) return;
+    const repeat_days = !task && repeatEnabled && repeatDays.length ? repeatDays : undefined;
+    save({ ...form, title: form.title.trim(), id: form.id || Date.now(), done: form.done || false, repeat_days });
+  };
+  const categoryOptions = [{ value: "", label: "Sin categoría" }, ...categories.map((category) => ({ value: category.name, label: category.name }))];
+  return (
+    <Modal title={task ? "Detalles de tarea" : "Nueva tarea"} close={close}>
+      <form onSubmit={submit}>
+        <div className="mt-5 space-y-3">
+          <input autoFocus value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="¿Qué necesitas hacer?" className={inputClass} />
+          <textarea value={form.notes || ""} onChange={(event) => update("notes", event.target.value)} placeholder="Notas" rows="3" className={inputClass} />
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-zinc-500">Fecha<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} className={`${inputClass} mt-1`} /></label>
+            <label className="text-xs text-zinc-500">Horario<input type="time" value={form.time} onChange={(event) => update("time", event.target.value)} className={`${inputClass} mt-1`} /></label>
+            <Select label="Categoría" value={form.category || ""} onChange={(value) => update("category", value)} options={categoryOptions} />
+            <Select label="Importancia" value={form.priority || ""} onChange={(value) => update("priority", value)} options={PRIORITY_OPTIONS} />
+          </div>
+          {!task && <RepeatField enabled={repeatEnabled} setEnabled={setRepeatEnabled} days={repeatDays} setDays={setRepeatDays} />}
+        </div>
+        <div className="mt-6 flex gap-2">
+          {task && <button type="button" onClick={() => remove(task.id)} className="rounded-xl border border-red-200 px-4 py-3 text-sm text-red-600">Eliminar</button>}
+          <button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white">Guardar</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function CategoryManagerModal({ title = "Categorías", categories, addCategory, removeCategory, close }) {
   const [name, setName] = useState("");
@@ -693,7 +784,7 @@ function FinanceArchive({ transactions, savings, openFinance, openSaving, openSa
         <CardHeader
           title="Balance mensual"
           action={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Select label="" value={month} onChange={changeMonth} options={months} />
               <button onClick={openFinance} className="flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white"><Plus size={14} /> Movimiento</button>
               <button type="button" onClick={openFinanceCategoryManager} aria-label="Gestionar categorías de movimientos" title="Gestionar categorías de movimientos" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"><Settings2 size={15} /></button>
@@ -776,6 +867,7 @@ export default function Page() {
   const dark = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
   const setDark = setStoredDark;
   const [wave, setWave] = useState(false);
+  useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
   return (
     <div className={dark ? "dark" : ""}>
       {wave && <div className={`theme-wave ${dark ? "theme-wave-dark" : "theme-wave-light"}`} />}
@@ -830,7 +922,7 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
   const removeHourEntry = (id) => { const previous = hourEntries; setHourEntries(hourEntries.filter((entry) => entry.id !== id)); api(`/hours/entries/${id}`, { method: "DELETE" }).catch(() => setHourEntries(previous)); };
   const toggleTask = (id) => { setTasks(tasks.map((task) => task.id === id ? { ...task, done: !task.done } : task)); api(`/tasks/${id}/complete`, { method: "PATCH" }).catch(() => setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task))); };
   const openTask = (task, selectedDate = date) => { setDate(selectedDate); setTaskModal(task || { date: selectedDate }); };
-  const saveTask = (task) => { const existing = tasks.find((item) => item.id === task.id); const payload = toApiTask(task); setTasks(existing ? tasks.map((item) => item.id === task.id ? task : item) : [...tasks, task]); setTaskModal(null); if (existing) { api(`/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((updated) => setTasks((current) => current.map((item) => item.id === task.id ? fromApiTask(updated) : item))).catch(() => setTasks((current) => current.map((item) => item.id === task.id ? existing : item))); } else { api("/tasks", { method: "POST", body: JSON.stringify(payload) }).then((created) => setTasks((current) => current.map((item) => item.id === task.id ? fromApiTask(created) : item))).catch(() => setTasks((current) => current.filter((item) => item.id !== task.id))); } };
+  const saveTask = (task) => { const existing = tasks.find((item) => item.id === task.id); const payload = toApiTask(task); setTasks(existing ? tasks.map((item) => item.id === task.id ? task : item) : [...tasks, task]); setTaskModal(null); if (existing) { api(`/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((updated) => setTasks((current) => current.map((item) => item.id === task.id ? fromApiTask(updated) : item))).catch(() => setTasks((current) => current.map((item) => item.id === task.id ? existing : item))); } else { api("/tasks", { method: "POST", body: JSON.stringify(payload) }).then((created) => setTasks((current) => [...current.filter((item) => item.id !== task.id), ...created.map(fromApiTask)])).catch(() => setTasks((current) => current.filter((item) => item.id !== task.id))); } };
   const deleteTask = (id) => { const previous = tasks; setTasks(tasks.filter((task) => task.id !== id)); setTaskModal(null); api(`/tasks/${id}`, { method: "DELETE" }).catch(() => setTasks(previous)); };
   const addCategory = (name) => api("/categories", { method: "POST", body: JSON.stringify({ name }) }).then((created) => setCategories((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name))));
   const removeCategory = (id) => {
@@ -891,7 +983,7 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
     if (removed) setTransactions((current) => current.map((tx) => tx.category === removed.name && tx.kind === kind ? { ...tx, category: null } : tx));
     api(`/categories/${id}`, { method: "DELETE" }).catch(() => setter(list));
   };
-  const openCategoryManager = () => setCategoryModalOpen(true); const toggleEvent = (id) => { const previous = events.find((item) => item.id === id); setEvents(events.map((event) => event.id === id ? { ...event, done: !event.done } : event)); api(`/events/${id}/toggle`, { method: "PATCH" }).catch(() => setEvents((current) => current.map((event) => event.id === id ? previous : event))); }; const openEvent = (event, selectedDate = date) => { setDate(selectedDate); setEventModal(event || { date: selectedDate }); }; const saveEvent = (event) => { const existing = events.find((item) => item.id === event.id); const payload = toApiEvent(event); setEvents(existing ? events.map((item) => item.id === event.id ? event : item) : [...events, { ...event, done: false }]); setEventModal(null); if (existing) { api(`/events/${event.id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((updated) => setEvents((current) => current.map((item) => item.id === event.id ? fromApiEvent(updated) : item))).catch(() => setEvents((current) => current.map((item) => item.id === event.id ? existing : item))); } else { api("/events", { method: "POST", body: JSON.stringify(payload) }).then((created) => setEvents((current) => current.map((item) => item.id === event.id ? fromApiEvent(created) : item))).catch(() => setEvents((current) => current.filter((item) => item.id !== event.id))); } }; const deleteEvent = (id) => { const previous = events; setEvents(events.filter((event) => event.id !== id)); setEventModal(null); api(`/events/${id}`, { method: "DELETE" }).catch(() => setEvents(previous)); }; const reorderSummary = (draggedId, targetId) => setSummaryColumns((current) => { const next = current.map((column) => column.filter((item) => item !== draggedId)); const targetColumnIndex = next.findIndex((column) => column.includes(targetId)); if (targetColumnIndex === -1) return current; const targetColumn = [...next[targetColumnIndex]]; targetColumn.splice(targetColumn.indexOf(targetId), 0, draggedId); next[targetColumnIndex] = targetColumn; return next; }); const moveSummaryToColumn = (draggedId, columnIndex) => setSummaryColumns((current) => { const next = current.map((column) => column.filter((item) => item !== draggedId)); next[columnIndex] = [...next[columnIndex], draggedId]; return next; });
+  const openCategoryManager = () => setCategoryModalOpen(true); const toggleEvent = (id) => { const previous = events.find((item) => item.id === id); setEvents(events.map((event) => event.id === id ? { ...event, done: !event.done } : event)); api(`/events/${id}/toggle`, { method: "PATCH" }).catch(() => setEvents((current) => current.map((event) => event.id === id ? previous : event))); }; const openEvent = (event, selectedDate = date) => { setDate(selectedDate); setEventModal(event || { date: selectedDate }); }; const saveEvent = (event) => { const existing = events.find((item) => item.id === event.id); const payload = toApiEvent(event); setEvents(existing ? events.map((item) => item.id === event.id ? event : item) : [...events, { ...event, done: false }]); setEventModal(null); if (existing) { api(`/events/${event.id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((updated) => setEvents((current) => current.map((item) => item.id === event.id ? fromApiEvent(updated) : item))).catch(() => setEvents((current) => current.map((item) => item.id === event.id ? existing : item))); } else { api("/events", { method: "POST", body: JSON.stringify(payload) }).then((created) => setEvents((current) => [...current.filter((item) => item.id !== event.id), ...created.map(fromApiEvent)])).catch(() => setEvents((current) => current.filter((item) => item.id !== event.id))); } }; const deleteEvent = (id) => { const previous = events; setEvents(events.filter((event) => event.id !== id)); setEventModal(null); api(`/events/${id}`, { method: "DELETE" }).catch(() => setEvents(previous)); }; const reorderSummary = (draggedId, targetId) => setSummaryColumns((current) => { const next = current.map((column) => column.filter((item) => item !== draggedId)); const targetColumnIndex = next.findIndex((column) => column.includes(targetId)); if (targetColumnIndex === -1) return current; const targetColumn = [...next[targetColumnIndex]]; targetColumn.splice(targetColumn.indexOf(targetId), 0, draggedId); next[targetColumnIndex] = targetColumn; return next; }); const moveSummaryToColumn = (draggedId, columnIndex) => setSummaryColumns((current) => { const next = current.map((column) => column.filter((item) => item !== draggedId)); next[columnIndex] = [...next[columnIndex], draggedId]; return next; });
   const addWidget = (id) => setSummaryColumns((current) => { const shorterIndex = current[0].length <= current[1].length ? 0 : 1; const next = current.map((column) => [...column]); next[shorterIndex].push(id); return next; });
   const removeWidget = (id) => setSummaryColumns((current) => current.map((column) => column.filter((item) => item !== id)));
   const presentWidgetIds = new Set(summaryColumns.flat());
