@@ -111,6 +111,7 @@ class Event(Base):
     type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     color: Mapped[str] = mapped_column(String(10), default="#d9f99d")
     done: Mapped[bool] = mapped_column(Boolean, default=False)
+    important: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class PomodoroSettings(Base):

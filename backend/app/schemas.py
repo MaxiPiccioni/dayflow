@@ -193,6 +193,7 @@ class EventCreate(BaseModel):
     time: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
     type: str | None = Field(default=None, max_length=30)
     color: str = Field(default="#d9f99d", max_length=10)
+    important: bool = False
 
 
 class EventUpdate(BaseModel):
@@ -201,6 +202,7 @@ class EventUpdate(BaseModel):
     time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     type: str | None = Field(default=None, max_length=30)
     color: str | None = Field(default=None, max_length=10)
+    important: bool | None = None
 
 
 class EventOut(EventCreate):
