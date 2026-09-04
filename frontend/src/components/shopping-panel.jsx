@@ -88,13 +88,23 @@ function QuantityControl({ value, onChange }) {
   );
 }
 
-function ShoppingListModal({ items, categories, markBought, close }) {
-  const toBuy = items.filter((item) => item.stock <= 0 || item.force_list);
+const LIST_PAGE_SIZE = 8;
+
+function groupByCategory(items, categories) {
   const groupNames = [...categories.map((category) => category.name), null];
-  const groups = groupNames.map((groupName) => ({ name: groupName, items: toBuy.filter((item) => (item.category || null) === groupName) })).filter((group) => group.items.length);
+  return groupNames.map((groupName) => ({ name: groupName, items: items.filter((item) => (item.category || null) === groupName) })).filter((group) => group.items.length);
+}
+
+function ShoppingListModal({ items, categories, markBought, close }) {
+  const [page, setPage] = useState(1);
+  const toBuy = groupByCategory(items.filter((item) => item.stock <= 0 || item.force_list), categories).flatMap((group) => group.items);
+  const totalPages = Math.max(1, Math.ceil(toBuy.length / LIST_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = toBuy.slice((currentPage - 1) * LIST_PAGE_SIZE, currentPage * LIST_PAGE_SIZE);
+  const groups = groupByCategory(pageItems, categories);
   return (
     <Modal title="Lista del súper" close={close}>
-      <div className="mt-5 space-y-5">
+      <div className="thin-scrollbar mt-5 max-h-[55vh] space-y-5 overflow-y-auto pr-2">
         {groups.length ? groups.map((group) => (
           <div key={group.name || "sin-categoria"}>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{group.name || "Sin categoría"}</p>
@@ -111,6 +121,12 @@ function ShoppingListModal({ items, categories, markBought, close }) {
           </div>
         )) : <p className="py-8 text-center text-sm text-zinc-400">No te falta nada por ahora.</p>}
       </div>
+      {toBuy.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-zinc-400">{`${(currentPage - 1) * LIST_PAGE_SIZE + 1}–${Math.min(currentPage * LIST_PAGE_SIZE, toBuy.length)} de ${toBuy.length}`}</span>
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+        </div>
+      )}
     </Modal>
   );
 }

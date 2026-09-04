@@ -85,6 +85,13 @@ body {
 }
 
 .dark .modal-panel { background: #18181b; color: #f4f4f5; }
+
+.thin-scrollbar { scrollbar-width: thin; scrollbar-color: rgb(212 212 216) transparent; }
+.thin-scrollbar::-webkit-scrollbar { width: 8px; }
+.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background-color: rgb(212 212 216); border-radius: 9999px; }
+.dark .thin-scrollbar { scrollbar-color: rgb(63 63 70) transparent; }
+.dark .thin-scrollbar::-webkit-scrollbar-thumb { background-color: rgb(63 63 70); }
 .modal-overlay-out { animation: modal-overlay-out 350ms ease-in both; }
 .modal-panel-out { animation: modal-panel-out 350ms ease-in both; }
 
