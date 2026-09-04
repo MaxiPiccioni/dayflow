@@ -144,6 +144,10 @@ def _build_habit_out(db: Session, habit: Habit, today: date_type) -> HabitOut:
     return _habit_out_from_logs(habit, _habit_logs_by_date(db, habit.id), today)
 
 
+def _resolve_today(client_today: date_type | None) -> date_type:
+    return client_today or date_type.today()
+
+
 def _habit_logs_by_habit_id(db: Session, habit_ids: list[int]) -> dict[int, dict[date_type, int]]:
     if not habit_ids:
         return {}
@@ -194,11 +198,11 @@ def _rollover_savings(db: Session, user: User, current_month: str) -> None:
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)
-def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)) -> DashboardOut:
+def dashboard(client_today: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> DashboardOut:
     tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.due_date, Task.completed, Task.id)).all()
     habit_rows = db.scalars(select(Habit).where(Habit.user_id == user.id).order_by(Habit.id)).all()
     transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.created_at.desc())).all()
-    today = date_type.today()
+    today = _resolve_today(client_today)
     logs_by_habit = _habit_logs_by_habit_id(db, [habit.id for habit in habit_rows])
     habits = [_habit_out_from_logs(habit, logs_by_habit.get(habit.id, {}), today) for habit in habit_rows]
     current_month = today.strftime("%Y-%m")
@@ -359,16 +363,16 @@ def delete_category(category_id: int, user: User = Depends(current_user), db: Se
 
 
 @app.post("/api/habits", response_model=HabitOut, status_code=status.HTTP_201_CREATED)
-def create_habit(payload: HabitCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
+def create_habit(payload: HabitCreate, client_today: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
     habit = Habit(user_id=user.id, name=payload.name.strip(), target=payload.target, unit=payload.unit.strip())
     db.add(habit)
     db.commit()
     db.refresh(habit)
-    return _build_habit_out(db, habit, date_type.today())
+    return _build_habit_out(db, habit, _resolve_today(client_today))
 
 
 @app.patch("/api/habits/{habit_id}", response_model=HabitOut)
-def update_habit(habit_id: int, payload: HabitUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
+def update_habit(habit_id: int, payload: HabitUpdate, client_today: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
@@ -376,7 +380,7 @@ def update_habit(habit_id: int, payload: HabitUpdate, user: User = Depends(curre
         setattr(habit, field, value)
     db.commit()
     db.refresh(habit)
-    return _build_habit_out(db, habit, date_type.today())
+    return _build_habit_out(db, habit, _resolve_today(client_today))
 
 
 @app.get("/api/habits/{habit_id}/logs", response_model=list[HabitLogOut])
@@ -388,11 +392,12 @@ def list_habit_logs(habit_id: int, user: User = Depends(current_user), db: Sessi
 
 
 @app.put("/api/habits/{habit_id}/logs/{log_date}", response_model=HabitOut)
-def set_habit_log(habit_id: int, log_date: date_type, payload: HabitLogUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
+def set_habit_log(habit_id: int, log_date: date_type, payload: HabitLogUpdate, client_today: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HabitOut:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    if log_date > date_type.today():
+    today = _resolve_today(client_today)
+    if log_date > today:
         raise HTTPException(status_code=400, detail="No se pueden registrar días futuros")
     if log_date < habit.created_at.date():
         raise HTTPException(status_code=400, detail="No se pueden registrar días previos a la creación del hábito")
@@ -404,12 +409,12 @@ def set_habit_log(habit_id: int, log_date: date_type, payload: HabitLogUpdate, u
     else:
         log.count = count
     db.commit()
-    return _build_habit_out(db, habit, date_type.today())
+    return _build_habit_out(db, habit, today)
 
 
 @app.get("/api/habits/overview", response_model=list[HabitOverviewOut])
-def habits_overview(days: int = 14, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitOverviewOut]:
-    today = date_type.today()
+def habits_overview(days: int = 14, client_today: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitOverviewOut]:
+    today = _resolve_today(client_today)
     start = today - timedelta(days=days - 1)
     habit_rows = db.scalars(select(Habit).where(Habit.user_id == user.id)).all()
     logs = db.scalars(select(HabitLog).where(HabitLog.user_id == user.id, HabitLog.log_date >= start, HabitLog.log_date <= today)).all()

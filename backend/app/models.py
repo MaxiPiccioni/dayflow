@@ -175,3 +175,4 @@ class ShoppingItem(Base):
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     stock: Mapped[int] = mapped_column(Integer, default=0)
     force_list: Mapped[bool] = mapped_column(Boolean, default=False)
+    buy_quantity: Mapped[int] = mapped_column(Integer, default=1)

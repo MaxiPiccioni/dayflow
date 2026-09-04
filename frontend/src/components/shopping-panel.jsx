@@ -2,15 +2,27 @@ import { useState } from "react";
 import { ChevronDown, ListPlus, Minus, Plus, Settings2, ShoppingCart, Trash2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
+import { Pagination } from "@/components/ui/pagination";
 import { api } from "@/lib/api";
 
 const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-lime-500 dark:border-zinc-700 dark:placeholder:text-zinc-500";
+const PAGE_SIZE = 10;
+const NO_CATEGORY = "__none__";
+
+function GenericSelect({ value, onChange, options, placeholder, className = "" }) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+  return <div className={`relative ${className}`}><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)} className={`${inputClass} flex items-center justify-between text-left ${value ? "" : "text-zinc-400"}`}>{selected?.label || placeholder}<ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} /></button>{open && <div role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">{options.map((option) => <button type="button" role="option" aria-selected={option.value === value} key={option.value || "none"} onClick={() => { onChange(option.value); setOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${option.value === value ? "bg-zinc-100 font-medium dark:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}>{option.label}</button>)}</div>}</div>;
+}
 
 function CategorySelect({ value, onChange, categories }) {
-  const [open, setOpen] = useState(false);
   const options = [{ value: "", label: "Sin categoría" }, ...categories.map((category) => ({ value: category.name, label: category.name }))];
-  const selected = options.find((option) => option.value === value);
-  return <div className="relative"><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)} className={`${inputClass} flex items-center justify-between text-left ${value ? "" : "text-zinc-400"}`}>{selected?.label || "Sin categoría"}<ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} /></button>{open && <div role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">{options.map((option) => <button type="button" role="option" aria-selected={option.value === value} key={option.value || "none"} onClick={() => { onChange(option.value); setOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${option.value === value ? "bg-zinc-100 font-medium dark:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}>{option.label}</button>)}</div>}</div>;
+  return <GenericSelect value={value} onChange={onChange} options={options} placeholder="Sin categoría" />;
+}
+
+function CategoryFilterSelect({ value, onChange, categories, className }) {
+  const options = [{ value: "", label: "Todas las categorías" }, ...categories.map((category) => ({ value: category.name, label: category.name })), { value: NO_CATEGORY, label: "Sin categoría" }];
+  return <GenericSelect value={value} onChange={onChange} options={options} placeholder="Todas las categorías" className={className} />;
 }
 
 function ShoppingCategoryModal({ categories, addCategory, removeCategory, close }) {
@@ -62,6 +74,20 @@ function StockControl({ value, onChange }) {
   );
 }
 
+function QuantityControl({ value, onChange }) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-zinc-200 px-1 dark:border-zinc-700" title="Cantidad a comprar">
+      <button type="button" onClick={() => onChange(Math.max(1, value - 1))} aria-label="Restar cantidad a comprar" className="grid h-6 w-6 place-items-center rounded text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800">
+        <Minus size={12} />
+      </button>
+      <span className="w-4 text-center text-xs font-semibold">{value}</span>
+      <button type="button" onClick={() => onChange(value + 1)} aria-label="Sumar cantidad a comprar" className="grid h-6 w-6 place-items-center rounded text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800">
+        <Plus size={12} />
+      </button>
+    </div>
+  );
+}
+
 function ShoppingListModal({ items, categories, markBought, close }) {
   const toBuy = items.filter((item) => item.stock <= 0 || item.force_list);
   const groupNames = [...categories.map((category) => category.name), null];
@@ -75,7 +101,7 @@ function ShoppingListModal({ items, categories, markBought, close }) {
             <div className="mt-2 space-y-1">
               {group.items.map((item) => (
                 <div key={item.id} className="flex items-center justify-between rounded-xl px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                  <span className="text-sm">{item.name}</span>
+                  <span className="text-sm">{item.name}{item.buy_quantity > 1 ? ` ×${item.buy_quantity}` : ""}</span>
                   <button type="button" onClick={() => markBought(item)} className="flex items-center gap-1 rounded-lg bg-lime-200 px-3 py-1.5 text-xs font-semibold text-lime-950">
                     <Plus size={13} /> Comprado
                   </button>
@@ -95,6 +121,12 @@ export function ShoppingPanel({ items, setItems, categories, setCategories }) {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [page, setPage] = useState(1);
+
+  const updateSearch = (value) => { setSearch(value); setPage(1); };
+  const updateCategoryFilter = (value) => { setCategoryFilter(value); setPage(1); };
 
   const toBuyCount = items.filter((item) => item.stock <= 0 || item.force_list).length;
 
@@ -119,8 +151,9 @@ export function ShoppingPanel({ items, setItems, categories, setCategories }) {
   };
 
   const updateStock = (item, nextStock) => patchItem(item, { stock: nextStock });
+  const updateBuyQuantity = (item, nextQuantity) => patchItem(item, { buy_quantity: nextQuantity });
   const toggleForceList = (item) => patchItem(item, { force_list: !item.force_list });
-  const markBought = (item) => patchItem(item, { stock: item.stock + 1, force_list: false });
+  const markBought = (item) => patchItem(item, { stock: item.stock + item.buy_quantity, force_list: false, buy_quantity: 1 });
 
   const removeItem = (id) => {
     const previous = items;
@@ -139,6 +172,16 @@ export function ShoppingPanel({ items, setItems, categories, setCategories }) {
   };
 
   const sortedItems = [...items].sort((a, b) => (a.category || "").localeCompare(b.category || "") || a.name.localeCompare(b.name));
+  const searchTerm = search.trim().toLowerCase();
+  const filteredItems = sortedItems.filter((item) => {
+    if (searchTerm && !item.name.toLowerCase().includes(searchTerm)) return false;
+    if (categoryFilter === NO_CATEGORY) return !item.category;
+    if (categoryFilter) return item.category === categoryFilter;
+    return true;
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filteredItems.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <Card className="shopping-panel">
@@ -161,15 +204,20 @@ export function ShoppingPanel({ items, setItems, categories, setCategories }) {
         <CategorySelect value={category} onChange={setCategory} categories={categories} />
         <button type="submit" className="flex items-center justify-center gap-1 rounded-xl bg-lime-200 px-4 py-2 text-sm font-semibold text-lime-950"><Plus size={15} /> Añadir</button>
       </form>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr]">
+        <input value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="Buscar producto..." className={inputClass} />
+        <CategoryFilterSelect value={categoryFilter} onChange={updateCategoryFilter} categories={categories} />
+      </div>
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       <div className="mt-5 space-y-1">
-        {sortedItems.length ? sortedItems.map((item) => (
+        {pageItems.length ? pageItems.map((item) => (
           <div key={item.id} className="flex items-center justify-between gap-3 border-t border-zinc-100 py-2.5 text-sm dark:border-zinc-800">
             <div className="min-w-0 flex-1">
               <p className="truncate">{item.name}</p>
               {item.category && <p className="text-xs text-zinc-400">{item.category}</p>}
             </div>
             <StockControl value={item.stock} onChange={(next) => updateStock(item, next)} />
+            <QuantityControl value={item.buy_quantity} onChange={(next) => updateBuyQuantity(item, next)} />
             <button
               type="button"
               onClick={() => toggleForceList(item)}
@@ -183,8 +231,14 @@ export function ShoppingPanel({ items, setItems, categories, setCategories }) {
               <Trash2 size={15} />
             </button>
           </div>
-        )) : <p className="py-8 text-center text-sm text-zinc-400">Todavía no agregaste productos.</p>}
+        )) : <p className="py-8 text-center text-sm text-zinc-400">{items.length ? "No se encontraron productos." : "Todavía no agregaste productos."}</p>}
       </div>
+      {filteredItems.length > 0 && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-zinc-400">{`${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length}`}</span>
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+        </div>
+      )}
       {categoryModalOpen && <ShoppingCategoryModal categories={categories} addCategory={addCategory} removeCategory={removeCategory} close={() => setCategoryModalOpen(false)} />}
       {listOpen && <ShoppingListModal items={items} categories={categories} markBought={markBought} close={() => setListOpen(false)} />}
     </Card>

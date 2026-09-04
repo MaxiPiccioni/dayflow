@@ -495,7 +495,7 @@ function AgendaPanel({ tasks, events, date, setDate, toggle, toggleEvent, openTa
 const HABIT_WEEKDAY_LETTERS = ["D", "L", "M", "X", "J", "V", "S"];
 
 function Habits({ habits, date, setDate, habitLogs, onSetCount, openHabit }) {
-  const clickTimer = useRef(null);
+  const clickTimers = useRef({});
   const isToday = date === todayIso();
   const countFor = (habit) => (isToday ? habit.count : habitLogs[habit.id]?.[date] ?? 0);
   const progressFor = (habit) => (habit.target ? Math.round((countFor(habit) / habit.target) * 100) : 0);
@@ -518,7 +518,7 @@ function Habits({ habits, date, setDate, habitLogs, onSetCount, openHabit }) {
           const progress = progressFor(habit);
           const complete = progress >= 100;
           return (
-            <button key={habit.id} onClick={(event) => { if (event.detail === 2) { clearTimeout(clickTimer.current); openHabit(habit); } else { clickTimer.current = window.setTimeout(() => cycle(habit), 250); } }} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
+            <button key={habit.id} onClick={(event) => { if (event.detail === 2) { clearTimeout(clickTimers.current[habit.id]); openHabit(habit); } else { clickTimers.current[habit.id] = window.setTimeout(() => cycle(habit), 250); } }} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
               <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition-transform duration-300 active:scale-75 ${complete ? "border-lime-500 bg-lime-400" : "border-zinc-300"}`}>{complete && <Check size={13} />}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex justify-between text-sm">
@@ -679,12 +679,17 @@ function SavingMovementsModal({ saving, movements, addMovement, removeMovement, 
   const [kind, setKind] = useState("deposit");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
+  const isTotal = kind === "total";
   const submit = async (event) => {
     event.preventDefault();
     const value = Number(amount);
-    if (!value || value <= 0) return;
+    if (amount === "" || Number.isNaN(value)) return;
+    let delta = value;
+    if (isTotal) delta = value - saving.current;
+    else if (kind === "withdraw") delta = -value;
+    if (!delta) return;
     setError("");
-    try { await addMovement(kind === "deposit" ? value : -value); setAmount(""); }
+    try { await addMovement(delta); setAmount(""); }
     catch (err) { setError(err.message || "No se pudo registrar el movimiento."); }
   };
   return (
@@ -694,10 +699,11 @@ function SavingMovementsModal({ saving, movements, addMovement, removeMovement, 
         <div><p className="text-xs text-zinc-500">Monto actual</p><p className="mt-1 text-xl font-semibold">$ {saving.current.toLocaleString("es-AR")}</p></div>
       </div>
       <form onSubmit={submit} className="mt-5 grid grid-cols-[1fr_1fr_auto] gap-2">
-        <Select label="" value={kind} onChange={setKind} options={[{ value: "deposit", label: "Depósito" }, { value: "withdraw", label: "Retiro" }]} />
-        <input type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Monto" className={`${inputClass} self-end`} />
+        <Select label="" value={kind} onChange={setKind} options={[{ value: "deposit", label: "Depósito" }, { value: "withdraw", label: "Retiro" }, { value: "total", label: "Total a fin de mes" }]} />
+        <input type="number" min={isTotal ? undefined : "0"} value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={isTotal ? "Monto total" : "Monto"} className={`${inputClass} self-end`} />
         <button type="submit" aria-label="Registrar movimiento" className="self-end rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"><Plus size={16} /></button>
       </form>
+      {isTotal && <p className="mt-2 text-xs text-zinc-500">Se registrará la diferencia con el monto actual como un movimiento (por ejemplo, el interés generado este mes).</p>}
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       <div className="mt-5 space-y-1">
         {movements.length ? movements.map((movement) => (
@@ -918,7 +924,7 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
     return () => { clearInterval(timer); flushPomodoroSeconds(); };
   }, [running]);
   const applyHoursState = (data) => { setHoursPeriod(data.period); setHourEntries(data.entries.map(fromApiEntry)); setHourPayments(data.payments.map(fromApiPayment)); setClosedPeriods(data.closed_periods.map(fromApiClosedPeriod)); };
-  useEffect(() => { Promise.all([api("/dashboard"), api("/events"), api("/pomodoro"), api("/hours"), api("/pomodoro/history"), api("/categories"), api("/categories?scope=finance&kind=income"), api("/categories?scope=finance&kind=expense"), api("/habits/overview"), api("/shopping-items"), api("/categories?scope=shopping")]).then(([dashboardData, eventsData, pomodoroData, hoursData, historyData, categoriesData, financeIncomeData, financeExpenseData, overviewData, shoppingItemsData, shoppingCategoriesData]) => { setTasks(dashboardData.tasks.map(fromApiTask)); setHabits(dashboardData.habits.map(fromApiHabit)); setTransactions(dashboardData.transactions.map(fromApiTransaction)); setSavings(dashboardData.savings.map(fromApiSaving)); setEvents(eventsData.map(fromApiEvent)); const loadedSettings = fromApiSettings(pomodoroData); setSettingsState(loadedSettings); setSeconds(loadedSettings.work * 60); applyHoursState(hoursData); setPomodoroHistory(historyData); setCategories(categoriesData); setFinanceIncomeCategories(financeIncomeData); setFinanceExpenseCategories(financeExpenseData); setHabitsOverview(overviewData.map(fromApiHabitOverview)); setShoppingItems(shoppingItemsData); setShoppingCategories(shoppingCategoriesData); setLoading(false); }).catch(() => logout()); }, [logout]);
+  useEffect(() => { Promise.all([api(`/dashboard?client_today=${todayIso()}`), api("/events"), api("/pomodoro"), api("/hours"), api("/pomodoro/history"), api("/categories"), api("/categories?scope=finance&kind=income"), api("/categories?scope=finance&kind=expense"), api(`/habits/overview?client_today=${todayIso()}`), api("/shopping-items"), api("/categories?scope=shopping")]).then(([dashboardData, eventsData, pomodoroData, hoursData, historyData, categoriesData, financeIncomeData, financeExpenseData, overviewData, shoppingItemsData, shoppingCategoriesData]) => { setTasks(dashboardData.tasks.map(fromApiTask)); setHabits(dashboardData.habits.map(fromApiHabit)); setTransactions(dashboardData.transactions.map(fromApiTransaction)); setSavings(dashboardData.savings.map(fromApiSaving)); setEvents(eventsData.map(fromApiEvent)); const loadedSettings = fromApiSettings(pomodoroData); setSettingsState(loadedSettings); setSeconds(loadedSettings.work * 60); applyHoursState(hoursData); setPomodoroHistory(historyData); setCategories(categoriesData); setFinanceIncomeCategories(financeIncomeData); setFinanceExpenseCategories(financeExpenseData); setHabitsOverview(overviewData.map(fromApiHabitOverview)); setShoppingItems(shoppingItemsData); setShoppingCategories(shoppingCategoriesData); setLoading(false); }).catch(() => logout()); }, [logout]);
   const habitIdsKey = habits.map((habit) => habit.id).join(",");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the set of habit ids changes, not on every count update
   useEffect(() => { if (!habitIdsKey) return; Promise.all(habits.map((habit) => api(`/habits/${habit.id}/logs`).then((logs) => [habit.id, logs]))).then((entries) => { const map = {}; entries.forEach(([id, logs]) => { map[id] = {}; logs.forEach((log) => { map[id][log.log_date] = log.count; }); }); setHabitLogs((current) => ({ ...current, ...map })); }); }, [habitIdsKey]);
@@ -953,11 +959,11 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
       const progress = habit.target ? Math.round((nextCount / habit.target) * 100) : 0;
       setHabits((current) => current.map((item) => item.id === habitId ? { ...item, count: nextCount, progress } : item));
     }
-    api(`/habits/${habitId}/logs/${dateStr}`, { method: "PUT", body: JSON.stringify({ count: nextCount }) })
+    api(`/habits/${habitId}/logs/${dateStr}?client_today=${todayIso()}`, { method: "PUT", body: JSON.stringify({ count: nextCount }) })
       .then((updated) => setHabits((current) => current.map((item) => item.id === habitId ? fromApiHabit(updated) : item)))
       .catch(() => { setHabits(previousHabits); setHabitLogs(previousLogs); });
   };
-  const saveHabit = (habit) => { const existing = habits.find((item) => item.id === habit.id); setHabits(existing ? habits.map((item) => item.id === habit.id ? habit : item) : [...habits, habit]); setHabitModal(null); if (existing) { api(`/habits/${habit.id}`, { method: "PATCH", body: JSON.stringify({ name: habit.name, target: habit.target, unit: habit.unit }) }).then((updated) => setHabits((current) => current.map((item) => item.id === habit.id ? fromApiHabit(updated) : item))).catch(() => setHabits((current) => current.map((item) => item.id === habit.id ? existing : item))); } else { api("/habits", { method: "POST", body: JSON.stringify({ name: habit.name, target: habit.target, unit: habit.unit }) }).then((created) => setHabits((current) => current.map((item) => item.id === habit.id ? fromApiHabit(created) : item))).catch(() => setHabits((current) => current.filter((item) => item.id !== habit.id))); } };
+  const saveHabit = (habit) => { const existing = habits.find((item) => item.id === habit.id); setHabits(existing ? habits.map((item) => item.id === habit.id ? habit : item) : [...habits, habit]); setHabitModal(null); if (existing) { api(`/habits/${habit.id}?client_today=${todayIso()}`, { method: "PATCH", body: JSON.stringify({ name: habit.name, target: habit.target, unit: habit.unit }) }).then((updated) => setHabits((current) => current.map((item) => item.id === habit.id ? fromApiHabit(updated) : item))).catch(() => setHabits((current) => current.map((item) => item.id === habit.id ? existing : item))); } else { api(`/habits?client_today=${todayIso()}`, { method: "POST", body: JSON.stringify({ name: habit.name, target: habit.target, unit: habit.unit }) }).then((created) => setHabits((current) => current.map((item) => item.id === habit.id ? fromApiHabit(created) : item))).catch(() => setHabits((current) => current.filter((item) => item.id !== habit.id))); } };
   const deleteHabit = (id) => { const previous = habits; setHabits(habits.filter((habit) => habit.id !== id)); setHabitModal(null); api(`/habits/${id}`, { method: "DELETE" }).catch(() => setHabits(previous)); };
   const addTransaction = (item) => { const tempId = Date.now(); setTransactions([...transactions, { id: tempId, description: item.description, amount: item.amount, kind: item.kind, category: item.category, method: item.method, createdAt: new Date().toISOString() }]); setFinanceOpen(false); api("/transactions", { method: "POST", body: JSON.stringify({ description: item.description, amount: item.amount, kind: item.kind, category: item.category, method: item.method }) }).then((created) => setTransactions((current) => current.map((entry) => entry.id === tempId ? fromApiTransaction(created) : entry))).catch(() => setTransactions((current) => current.filter((entry) => entry.id !== tempId))); };
   const deleteTransaction = (id) => { const previous = transactions; setTransactions(transactions.filter((item) => item.id !== id)); api(`/transactions/${id}`, { method: "DELETE" }).catch(() => setTransactions(previous)); };
