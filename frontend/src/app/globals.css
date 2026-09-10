@@ -144,9 +144,11 @@ body {
   body.print-hours .hours-calendar-card .hours-legend,
   body.print-hours .hours-calendar-card .hours-screen-calendar { display: none !important; }
   body.print-hours .hours-calendar-card .hours-print-calendars { display: flex !important; gap: 12mm; }
+  body.print-hours .hours-calendar-card .hours-print-list { display: block !important; }
+  body.print-hours .hours-print-list table { page-break-inside: auto; }
+  body.print-hours .hours-print-list tr { page-break-inside: avoid; }
   body.print-hours .hours-module { color: #18181b !important; }
   @page { size: A4; margin: 10mm; }
-  body.print-hours .hours-module { max-height: 270mm; overflow: hidden; }
 }
 
 .tab-panel { animation: tab-enter 180ms ease-out; }
