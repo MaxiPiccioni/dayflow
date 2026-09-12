@@ -99,7 +99,7 @@ function playClickSound() {
   filter.frequency.value = 1400;
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.008);
+  gain.gain.exponentialRampToValueAtTime(0.45, now + 0.008);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
   osc.connect(filter).connect(gain).connect(ctx.destination);
   osc.start(now);
@@ -123,10 +123,10 @@ function playAlarmSound() {
       partial.type = "sine";
       partial.frequency.setValueAtTime(freq * 2, start);
       const partialGain = ctx.createGain();
-      partialGain.gain.value = 0.05;
+      partialGain.gain.value = 0.16;
       const envelope = ctx.createGain();
       envelope.gain.setValueAtTime(0, start);
-      envelope.gain.linearRampToValueAtTime(0.14, start + 0.05);
+      envelope.gain.linearRampToValueAtTime(0.55, start + 0.05);
       envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
       osc.connect(envelope);
       partial.connect(partialGain).connect(envelope);
@@ -137,6 +137,12 @@ function playAlarmSound() {
       partial.stop(start + 0.95);
     });
   });
+}
+
+function notifyPhaseChange(nextPhase) {
+  if (typeof document === "undefined" || document.visibilityState !== "hidden") return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try { new Notification(nextPhase === "work" ? "Terminó el descanso" : "¡Bien! Tomate un descanso", { body: "Pomodoro", tag: "pomodoro" }); } catch { /* Notification puede fallar en algunos navegadores, no es crítico */ }
 }
 
 const fromApiTask = (task) => ({ id: task.id, title: task.title, date: task.due_date, time: task.time, category: task.category, priority: task.priority, done: task.completed, notes: task.notes || "" });
@@ -632,7 +638,7 @@ function HabitsTracker({ habits, habitLogs, overview }) {
   );
 }
 
-function Pomodoro({ settings, setSettings, seconds, setSeconds, running, setRunning, phase, setPhase, history, compact = false }) { const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; const totalSeconds = Math.max((phase === "work" ? settings.work : settings.breakTime) * 60, 1); const reset = () => { setRunning(false); setPhase("work"); setSeconds(settings.work * 60); }; const toggleRunning = () => { playClickSound(); setRunning(!running); }; const update = (key, value) => { const parsed = Math.round(Number(value)); const next = { ...settings, [key]: Number.isFinite(parsed) ? Math.max(0, parsed) : 0 }; setSettings(next); if (!running) { if (key === "work" && phase === "work") setSeconds(next.work * 60); if (key === "breakTime" && phase === "break") setSeconds(next.breakTime * 60); } }; return <div className="space-y-5"><Card className="text-center"><CardHeader eyebrow={phase === "work" ? "Sesión de foco" : "Descanso"} title="Pomodoro" action={<button onClick={reset} className="text-xs text-zinc-400">Reiniciar</button>} /><div className="mx-auto mt-4 grid h-56 w-56 place-items-center rounded-full" style={{ background: `conic-gradient(${phase === "work" ? "#a3e635" : "#7dd3fc"} ${seconds / totalSeconds * 100}%, #e4e4e7 0)` }}><div className="grid h-48 w-48 place-items-center rounded-full bg-white dark:bg-zinc-900"><p className="font-mono text-5xl font-semibold">{time}</p></div></div><button onClick={toggleRunning} className="mt-7 rounded-full bg-lime-300 px-7 py-3 text-sm font-semibold text-lime-950">{running ? "Pausar" : "Comenzar"}</button></Card>{!compact && <Card><CardHeader eyebrow="Personaliza tu foco" title="Configuración" action={<Settings2 size={17} className="text-zinc-400" />} /><div className="grid gap-3 sm:grid-cols-3">{[["repetitions", "Repeticiones"], ["work", "Temporizador (min)"], ["breakTime", "Descanso (min)"]].map(([key, label]) => <label key={key} className="text-xs text-zinc-500">{label}<input type="number" min="0" step="1" inputMode="numeric" value={settings[key]} onChange={(event) => update(key, event.target.value)} className={`${inputClass} mt-1`} /></label>)}</div><p className="mt-5 text-sm font-semibold">Uso por día</p><div className="mt-3 flex h-24 items-end gap-2">{history.map((item) => <div key={item.day} className="group relative flex flex-1 flex-col items-center gap-1"><div className="w-full rounded-t bg-lime-400" style={{ height: `${Math.max(4, item.minutes / 125 * 80)}px` }} /><span className="text-[10px] text-zinc-400">{item.day}</span><span className="pointer-events-none absolute bottom-full mb-1 hidden rounded bg-zinc-900 px-2 py-1 text-[10px] text-white group-hover:block">{item.minutes} min</span></div>)}</div></Card>}</div>; }
+function Pomodoro({ settings, setSettings, seconds, setSeconds, running, setRunning, phase, setPhase, history, compact = false }) { const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; const totalSeconds = Math.max((phase === "work" ? settings.work : settings.breakTime) * 60, 1); const reset = () => { setRunning(false); setPhase("work"); setSeconds(settings.work * 60); }; const toggleRunning = () => { playClickSound(); if (!running && typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission().catch(() => {}); setRunning(!running); }; const update = (key, value) => { const parsed = Math.round(Number(value)); const next = { ...settings, [key]: Number.isFinite(parsed) ? Math.max(0, parsed) : 0 }; setSettings(next); if (!running) { if (key === "work" && phase === "work") setSeconds(next.work * 60); if (key === "breakTime" && phase === "break") setSeconds(next.breakTime * 60); } }; return <div className="space-y-5"><Card className="text-center"><CardHeader eyebrow={phase === "work" ? "Sesión de foco" : "Descanso"} title="Pomodoro" action={<button onClick={reset} className="text-xs text-zinc-400">Reiniciar</button>} /><div className="mx-auto mt-4 grid h-56 w-56 place-items-center rounded-full" style={{ background: `conic-gradient(${phase === "work" ? "#a3e635" : "#7dd3fc"} ${seconds / totalSeconds * 100}%, #e4e4e7 0)` }}><div className="grid h-48 w-48 place-items-center rounded-full bg-white dark:bg-zinc-900"><p className="font-mono text-5xl font-semibold">{time}</p></div></div><button onClick={toggleRunning} className="mt-7 rounded-full bg-lime-300 px-7 py-3 text-sm font-semibold text-lime-950">{running ? "Pausar" : "Comenzar"}</button></Card>{!compact && <Card><CardHeader eyebrow="Personaliza tu foco" title="Configuración" action={<Settings2 size={17} className="text-zinc-400" />} /><div className="grid gap-3 sm:grid-cols-3">{[["repetitions", "Repeticiones"], ["work", "Temporizador (min)"], ["breakTime", "Descanso (min)"]].map(([key, label]) => <label key={key} className="text-xs text-zinc-500">{label}<input type="number" min="0" step="1" inputMode="numeric" value={settings[key]} onChange={(event) => update(key, event.target.value)} className={`${inputClass} mt-1`} /></label>)}</div><p className="mt-5 text-sm font-semibold">Uso por día</p><div className="mt-3 flex h-24 items-end gap-2">{history.map((item) => <div key={item.day} className="group relative flex flex-1 flex-col items-center gap-1"><div className="w-full rounded-t bg-lime-400" style={{ height: `${Math.max(4, item.minutes / 125 * 80)}px` }} /><span className="text-[10px] text-zinc-400">{item.day}</span><span className="pointer-events-none absolute bottom-full mb-1 hidden rounded bg-zinc-900 px-2 py-1 text-[10px] text-white group-hover:block">{item.minutes} min</span></div>)}</div></Card>}</div>; }
 
 function FinanceModal({ incomeCategories, expenseCategories, save, close }) {
   const [form, setForm] = useState({ description: "", amount: "", kind: "expense", category: expenseCategories[0]?.name || "", method: "Efectivo" });
@@ -916,6 +922,7 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
   }, [draggingWidgetId]);
   const settingsRef = useRef(settings); useEffect(() => { settingsRef.current = settings; }, [settings]);
   const phaseRef = useRef(phase); useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const secondsRef = useRef(seconds); useEffect(() => { secondsRef.current = seconds; }, [seconds]);
   const workSecondsRef = useRef(0);
   const flushPomodoroSeconds = () => {
     const pending = workSecondsRef.current;
@@ -925,13 +932,53 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
     setPomodoroHistory((current) => current.map((entry) => entry.date === todayStr ? { ...entry, seconds: entry.seconds + pending } : entry));
     api("/pomodoro/log", { method: "POST", body: JSON.stringify({ seconds: pending }) }).catch(() => {});
   };
+  // El temporizador se calcula a partir de marcas de tiempo reales (Date.now()), no de un contador de ticks:
+  // así, si el navegador frena o suspende el setInterval mientras la pestaña está en segundo plano
+  // (algo frecuente en iPhone/Safari), al volver se recalcula el tiempo real transcurrido y se "pone al día"
+  // en vez de quedar desincronizado o directamente detenido.
   useEffect(() => {
     if (!running) return undefined;
-    const timer = setInterval(() => {
-      setSeconds((value) => { if (value > 0) return value - 1; playAlarmSound(); const nextPhase = phaseRef.current === "work" ? "break" : "work"; setPhase(nextPhase); return (nextPhase === "work" ? settingsRef.current.work : settingsRef.current.breakTime) * 60; });
-      if (phaseRef.current === "work") { workSecondsRef.current += 1; if (workSecondsRef.current >= 60) flushPomodoroSeconds(); }
-    }, 1000);
-    return () => { clearInterval(timer); flushPomodoroSeconds(); };
+    const lastTickRef = { current: Date.now() };
+    const advance = () => {
+      const now = Date.now();
+      let elapsed = Math.floor((now - lastTickRef.current) / 1000);
+      if (elapsed <= 0) return;
+      lastTickRef.current += elapsed * 1000;
+      let currentPhase = phaseRef.current;
+      let currentSeconds = secondsRef.current;
+      let workGained = 0;
+      let rang = false;
+      let guard = 0;
+      while (elapsed > 0 && guard < 10000) {
+        guard += 1;
+        if (elapsed < currentSeconds) {
+          if (currentPhase === "work") workGained += elapsed;
+          currentSeconds -= elapsed;
+          elapsed = 0;
+        } else {
+          if (currentPhase === "work") workGained += currentSeconds;
+          elapsed -= currentSeconds;
+          currentPhase = currentPhase === "work" ? "break" : "work";
+          currentSeconds = (currentPhase === "work" ? settingsRef.current.work : settingsRef.current.breakTime) * 60;
+          rang = true;
+        }
+      }
+      if (workGained > 0) { workSecondsRef.current += workGained; if (workSecondsRef.current >= 60) flushPomodoroSeconds(); }
+      if (rang) { playAlarmSound(); notifyPhaseChange(currentPhase); }
+      if (currentPhase !== phaseRef.current) { phaseRef.current = currentPhase; setPhase(currentPhase); }
+      if (currentSeconds !== secondsRef.current) { secondsRef.current = currentSeconds; setSeconds(currentSeconds); }
+    };
+    const timer = setInterval(advance, 1000);
+    const onVisible = () => { if (document.visibilityState === "visible") advance(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      advance();
+      flushPomodoroSeconds();
+    };
   }, [running]);
   const applyHoursState = (data) => { setHoursPeriod(data.period); setHourEntries(data.entries.map(fromApiEntry)); setHourPayments(data.payments.map(fromApiPayment)); setClosedPeriods(data.closed_periods.map(fromApiClosedPeriod)); };
   useEffect(() => { Promise.all([api(`/dashboard?client_today=${todayIso()}`), api("/events"), api("/pomodoro"), api("/hours"), api("/pomodoro/history"), api("/categories"), api("/categories?scope=finance&kind=income"), api("/categories?scope=finance&kind=expense"), api(`/habits/overview?client_today=${todayIso()}`), api("/shopping-items"), api("/categories?scope=shopping")]).then(([dashboardData, eventsData, pomodoroData, hoursData, historyData, categoriesData, financeIncomeData, financeExpenseData, overviewData, shoppingItemsData, shoppingCategoriesData]) => { setTasks(dashboardData.tasks.map(fromApiTask)); setHabits(dashboardData.habits.map(fromApiHabit)); setTransactions(dashboardData.transactions.map(fromApiTransaction)); setSavings(dashboardData.savings.map(fromApiSaving)); setEvents(eventsData.map(fromApiEvent)); const loadedSettings = fromApiSettings(pomodoroData); setSettingsState(loadedSettings); setSeconds(loadedSettings.work * 60); applyHoursState(hoursData); setPomodoroHistory(historyData); setCategories(categoriesData); setFinanceIncomeCategories(financeIncomeData); setFinanceExpenseCategories(financeExpenseData); setHabitsOverview(overviewData.map(fromApiHabitOverview)); setShoppingItems(shoppingItemsData); setShoppingCategories(shoppingCategoriesData); setLoading(false); }).catch(() => logout()); }, [logout]);
