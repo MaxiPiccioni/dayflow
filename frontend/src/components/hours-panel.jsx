@@ -17,17 +17,6 @@ function todayIso() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-const PERIOD_ANCHOR_DAY = 11;
-const shiftMonthDate = (dateObj, delta) => { const next = new Date(dateObj); next.setMonth(next.getMonth() + delta); return next; };
-const formatDateLocal = (dateObj) => `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
-function periodBoundsFor(dateStr) {
-  const reference = new Date(`${dateStr}T12:00:00`);
-  const start = reference.getDate() >= PERIOD_ANCHOR_DAY ? new Date(reference.getFullYear(), reference.getMonth(), PERIOD_ANCHOR_DAY, 12) : shiftMonthDate(new Date(reference.getFullYear(), reference.getMonth(), PERIOD_ANCHOR_DAY, 12), -1);
-  const end = shiftMonthDate(start, 1);
-  end.setDate(PERIOD_ANCHOR_DAY - 1);
-  return { start: formatDateLocal(start), end: formatDateLocal(end) };
-}
-
 const PRINT_MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const PRINT_STATUS_COLORS = { paid: { bg: "#bbf7d0", text: "#052e16" }, pending: { bg: "#fef08a", text: "#422006" }, outside: { bg: "#e4e4e7", text: "#3f3f46" } };
 function PrintMonthGrid({ monthStr, dateColors }) {
@@ -106,15 +95,18 @@ export function HoursPanel({ period, setPeriod, payments, setPayments, entries, 
   const [viewTarget, setViewTarget] = useState(null);
   const [periodLoading, setPeriodLoading] = useState(false);
   const loadedStartRef = useRef(period.start);
+  const loadedRangeRef = useRef({ start: period.start, end: period.end });
+  useEffect(() => { loadedRangeRef.current = { start: period.start, end: period.end }; }, [period.start, period.end]);
 
   useEffect(() => {
-    const bounds = periodBoundsFor(selectedDate);
-    if (bounds.start === loadedStartRef.current) return undefined;
+    const { start, end } = loadedRangeRef.current;
+    if (selectedDate >= start && selectedDate <= end) return undefined;
     let cancelled = false;
     setPeriodLoading(true);
-    api(`/hours?reference_date=${bounds.start}`).then((data) => {
+    api(`/hours?reference_date=${selectedDate}`).then((data) => {
       if (cancelled) return;
       loadedStartRef.current = data.period.start;
+      loadedRangeRef.current = { start: data.period.start, end: data.period.end };
       setPeriod(data.period);
       setPayments(data.payments.map(fromApiPayment));
       setClosedPeriods(data.closed_periods.map(fromApiClosedPeriod));

@@ -652,26 +652,13 @@ def log_pomodoro_seconds(payload: PomodoroLogCreate, user: User = Depends(curren
     return PomodoroLogOut(date=row.log_date, seconds=row.seconds)
 
 
-PERIOD_ANCHOR_DAY = 11
-
-
-def _shift_month(value: date_type, delta: int = 1) -> date_type:
-    total = value.month - 1 + delta
-    year = value.year + total // 12
-    month = total % 12 + 1
-    day = min(value.day, calendar.monthrange(year, month)[1])
-    return value.replace(year=year, month=month, day=day)
-
-
 def _period_end(start: date_type) -> date_type:
-    shifted = _shift_month(start)
-    return shifted.replace(day=PERIOD_ANCHOR_DAY - 1)
+    last_day = calendar.monthrange(start.year, start.month)[1]
+    return start.replace(day=last_day)
 
 
 def _period_start_for(reference: date_type) -> date_type:
-    if reference.day >= PERIOD_ANCHOR_DAY:
-        return reference.replace(day=PERIOD_ANCHOR_DAY)
-    return _shift_month(reference, -1).replace(day=PERIOD_ANCHOR_DAY)
+    return reference.replace(day=1)
 
 
 def _entry_duration(entry: HourEntry) -> float:
