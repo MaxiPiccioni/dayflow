@@ -16,13 +16,3 @@ services:
       - key: CORS_ORIGINS
         sync: false
 
-  - type: web
-    name: dayflow-frontend
-    runtime: node
-    plan: free
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    startCommand: npm run start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        sync: false
