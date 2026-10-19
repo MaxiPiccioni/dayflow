@@ -92,6 +92,12 @@ def current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
     return user
 
 
+@app.api_route("/api/ping", methods=["GET", "HEAD"])
+def ping() -> dict[str, str]:
+    # Keep-alive del cronjob: no toca la DB para que Neon pueda suspenderse.
+    return {"status": "ok"}
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
     db.execute(select(1))
