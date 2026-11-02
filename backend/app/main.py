@@ -681,11 +681,20 @@ def _entry_value(entry: HourEntry, rate: float) -> float:
     return _entry_duration(entry) * rate * (2 if entry.extra else 1)
 
 
+# Desde esta fecha los períodos son siempre meses calendario. Los períodos
+# viejos "11 al 10" solo se buscan por rango para fechas anteriores.
+CALENDAR_PERIODS_FROM = date_type(2026, 10, 1)
+
+
 def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
-    existing = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.start <= reference, PayPeriod.end >= reference))
+    start = _period_start_for(reference)
+    if reference >= CALENDAR_PERIODS_FROM:
+        match = PayPeriod.start == start
+    else:
+        match = (PayPeriod.start <= reference) & (PayPeriod.end >= reference)
+    existing = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, match).order_by(PayPeriod.start.desc()))
     if existing:
         return existing
-    start = _period_start_for(reference)
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
     rate = last.rate if last else 0.0
     period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
@@ -705,8 +714,8 @@ def _close_period(db: Session, period: PayPeriod, user: User) -> None:
     period.closed = True
 
 
-def _build_hours_state(db: Session, user: User, reference: date_type) -> HoursStateOut:
-    period = _resolve_period(db, user, reference)
+def _build_hours_state(db: Session, user: User, reference: date_type, period: PayPeriod | None = None) -> HoursStateOut:
+    period = period or _resolve_period(db, user, reference)
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id).order_by(HourEntry.entry_date)).all()
     payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id).order_by(HourPayment.payment_date)).all()
     closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
@@ -792,7 +801,7 @@ def reopen_period(period_id: int, user: User = Depends(current_user), db: Sessio
         raise HTTPException(status_code=404, detail="Period not found")
     target.closed = False
     db.commit()
-    return _build_hours_state(db, user, target.start)
+    return _build_hours_state(db, user, target.start, target)
 
 
 @app.delete("/api/hours/periods/{period_id}", response_model=HoursStateOut)
@@ -807,7 +816,7 @@ def delete_period(period_id: int, user: User = Depends(current_user), db: Sessio
         db.delete(entry)
     db.delete(period)
     db.commit()
-    return _build_hours_state(db, user)
+    return _build_hours_state(db, user, date_type.today())
 
 
 @app.get("/api/hours/periods/{period_id}/payments", response_model=list[HourPaymentOut])
