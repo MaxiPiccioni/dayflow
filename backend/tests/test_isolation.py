@@ -75,6 +75,19 @@ def _setup_closed_period(client, db, a):
     return {"id": period_id}
 
 
+def _setup_subject(client, db, a):
+    response = client.post("/api/faculty/subjects", json={"name": MARK, "level": 1, "status": "aprobada", "grade": 8}, headers=a)
+    assert response.status_code == 201, response.text
+    subject = response.json()
+    folder_ids = [folder["id"] for folder in subject["folders"]]
+    return {"id": subject["id"], "folder_id": folder_ids[0], "folder_ids": folder_ids, "reversed_folder_ids": list(reversed(folder_ids))}
+
+
+def _subject_exists(client, a, ctx):
+    subjects = client.get("/api/faculty/subjects", headers=a).json()
+    return [(s["id"], s["name"], s["status"], s["grade"], [f["id"] for f in s["folders"]]) for s in subjects] == [(ctx["id"], MARK, "aprobada", 8, ctx["folder_ids"])]
+
+
 def _task_exists(client, a, ctx):
     return any(task["id"] == ctx["id"] and task["title"] == MARK and not task["completed"] for task in client.get(f"/api/dashboard?client_today={TODAY}", headers=a).json()["tasks"])
 
@@ -150,6 +163,23 @@ RESOURCES = [
         ],
         _closed_period_exists,
     ),
+    (
+        "subjects",
+        _setup_subject,
+        [
+            ("PATCH", "/api/faculty/subjects/{id}", {"name": "hackeada", "status": "libre"}),
+            ("POST", "/api/faculty/subjects/{id}/folders", {"name": "hackeada"}),
+            ("PUT", "/api/faculty/subjects/{id}/folders/order", {"ids": "{reversed_folder_ids}"}),
+            ("DELETE", "/api/faculty/subjects/{id}", None),
+        ],
+        _subject_exists,
+    ),
+    (
+        "subject folders",
+        _setup_subject,
+        [("PATCH", "/api/faculty/folders/{folder_id}", {"name": "hackeada"}), ("DELETE", "/api/faculty/folders/{folder_id}", None)],
+        _subject_exists,
+    ),
 ]
 
 
@@ -158,6 +188,9 @@ def test_other_user_gets_404_on_foreign_resource(client, db, users, name, setup,
     a, b = users
     ctx = setup(client, db, a)
     for method, path, body in attempts:
+        # Un valor "{clave}" en el cuerpo se reemplaza por ctx[clave] (por ejemplo, los ids de las carpetas de A).
+        if body:
+            body = {key: ctx[value[1:-1]] if isinstance(value, str) and value[1:-1] in ctx else value for key, value in body.items()}
         response = client.request(method, path.format(**ctx), json=body, headers=b)
         assert response.status_code == 404, f"{method} {path} -> {response.status_code}"
     assert still_there(client, a, ctx)
@@ -170,6 +203,27 @@ def test_movement_of_other_user_cannot_be_deleted_through_own_saving(client, db,
     response = client.delete(f"/api/savings/{own_saving['id']}/movements/{ctx_a['movement_id']}", headers=b)
     assert response.status_code == 404
     assert _saving_exists(client, a, ctx_a)
+
+
+def test_other_user_cannot_reorder_foreign_subjects(client, db, users):
+    a, b = users
+    first = _setup_subject(client, db, a)
+    second = client.post("/api/faculty/subjects", json={"name": "Otra de A", "level": 1}, headers=a).json()
+    # El orden de materias no lleva id en la ruta: los ids de A no son materias de B, así que da 400.
+    response = client.put("/api/faculty/subjects/order", json={"level": 1, "ids": [second["id"], first["id"]]}, headers=b)
+    assert response.status_code == 400
+    subjects_a = client.get("/api/faculty/subjects", headers=a).json()
+    assert [(s["id"], s["position"]) for s in subjects_a] == [(first["id"], 0), (second["id"], 1)]
+
+
+def test_own_folder_order_cannot_include_foreign_folders(client, db, users):
+    a, b = users
+    ctx_a = _setup_subject(client, db, a)
+    own = client.post("/api/faculty/subjects", json={"name": "De B", "level": 1}, headers=b).json()
+    own_ids = [folder["id"] for folder in own["folders"]]
+    response = client.put(f"/api/faculty/subjects/{own['id']}/folders/order", json={"ids": [*own_ids, ctx_a["folder_id"]]}, headers=b)
+    assert response.status_code == 400
+    assert _subject_exists(client, a, ctx_a)
 
 
 def test_pomodoro_settings_and_logs_are_per_user(client, users):
@@ -204,7 +258,7 @@ def test_rate_and_close_of_other_user_period_are_independent(client, users):
 
 def test_lists_of_other_user_do_not_include_foreign_data(client, db, users):
     a, b = users
-    for setup in (_setup_task, _setup_category, _setup_habit, _setup_shopping, _setup_transaction, _setup_saving, _setup_event, _setup_hour_entry, _setup_hour_payment):
+    for setup in (_setup_task, _setup_category, _setup_habit, _setup_shopping, _setup_transaction, _setup_saving, _setup_event, _setup_hour_entry, _setup_hour_payment, _setup_subject):
         setup(client, db, a)
     create_category(client, a, MARK, scope="finance", kind="expense")
     create_category(client, a, MARK, scope="shopping")
@@ -222,6 +276,7 @@ def test_lists_of_other_user_do_not_include_foreign_data(client, db, users):
     hours_b = hours_state(client, b)
     assert hours_b["entries"] == [] and hours_b["payments"] == [] and hours_b["closed_periods"] == []
     assert hours_b["period"]["rate"] == 0
+    assert client.get("/api/faculty/subjects", headers=b).json() == []
 
 
 def test_same_name_categories_of_other_user_do_not_propagate(client, users):

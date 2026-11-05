@@ -5,14 +5,15 @@ from datetime import timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import get_db
+from .deps import current_user
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
 from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
+from .routers import faculty
 from .schemas import (
     CategoryCreate,
     CategoryOut,
@@ -59,12 +60,11 @@ from .schemas import (
     UserLogin,
     UserOut,
 )
-from .security import create_access_token, get_user_id, hash_password, verify_password
+from .security import create_access_token, hash_password, verify_password
 
 # En producción no se expone la documentación interactiva ni el esquema OpenAPI.
 docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.is_production else {}
 app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)], **docs_kwargs)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # La autenticación va por header Authorization (Bearer), no por cookies, así que
 # no hace falta allow_credentials.
@@ -78,6 +78,9 @@ app.add_middleware(
 )
 
 
+app.include_router(faculty.router)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -87,17 +90,6 @@ async def security_headers(request: Request, call_next):
     if settings.is_production:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
-
-
-def current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    try:
-        user_id = get_user_id(token)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication") from exc
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
 
 
 @app.api_route("/api/ping", methods=["GET", "HEAD"])

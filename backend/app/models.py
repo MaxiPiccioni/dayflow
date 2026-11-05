@@ -1,6 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -26,6 +27,8 @@ class User(Base):
     hour_payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
     pomodoro_logs: Mapped[list["PomodoroLog"]] = relationship(cascade="all, delete-orphan")
     shopping_items: Mapped[list["ShoppingItem"]] = relationship(cascade="all, delete-orphan")
+    subjects: Mapped[list["Subject"]] = relationship(cascade="all, delete-orphan")
+    subject_folders: Mapped[list["SubjectFolder"]] = relationship(cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -179,3 +182,41 @@ class ShoppingItem(Base):
     stock: Mapped[int] = mapped_column(Integer, default=0)
     force_list: Mapped[bool] = mapped_column(Boolean, default=False)
     buy_quantity: Mapped[int] = mapped_column(Integer, default=1)
+
+
+# --- Facultad ---
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Subject(Base):
+    __tablename__ = "subjects"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_subjects_user_id_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_subjects_user_id_users"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    # Nivel de cursado (1° año, 2° año...).
+    level: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="por_cursar")
+    # Nota final: solo para estados aprobados (ver app/routers/faculty.py).
+    grade: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    # Claves de ícono y color: el frontend las traduce y tiene valores de reserva.
+    icon: Mapped[str] = mapped_column(String(40), default="book")
+    color: Mapped[str] = mapped_column(String(20), default="lime")
+    # Orden dentro del nivel.
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    # El ORM borra las carpetas al borrar la materia (SQLite no aplica el ON DELETE CASCADE de la FK).
+    folders: Mapped[list["SubjectFolder"]] = relationship(cascade="all, delete-orphan", order_by="SubjectFolder.position")
+
+
+class SubjectFolder(Base):
+    __tablename__ = "subject_folders"
+    __table_args__ = (UniqueConstraint("subject_id", "name", name="uq_subject_folders_subject_id_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_subject_folders_user_id_users"), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", name="fk_subject_folders_subject_id_subjects", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    position: Mapped[int] = mapped_column(Integer, default=0)
