@@ -249,8 +249,50 @@ def test_period_payments_endpoint_lists_payments_by_date(client, user):
     assert [(payment["payment_date"], payment["amount"]) for payment in payments] == [("2026-11-05", 700), ("2026-11-20", 500)]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: se puede registrar un pago en un período cerrado y no se refleja en paid/balance congelados")
-def test_payment_on_closed_period_is_rejected(client, user):
+def closed_summary(state) -> tuple:
+    [closed] = state["closed_periods"]
+    return (closed["total_hours"], closed["expected"], closed["paid"], closed["balance"])
+
+
+def test_payments_on_closed_period_update_paid_and_balance_but_not_frozen_totals(client, user):
+    # Los pagos llegan a mes vencido: un período cerrado tiene que seguir aceptándolos.
+    seed_november(client, user)
+    add_hour_payment(client, user, 5000)
+    assert closed_summary(close_period(client, user).json()) == (12, 16000, 5000, 11000)
+
+    state = add_hour_payment(client, user, 4000, payment_date="2026-12-05")
+    assert closed_summary(state) == (12, 16000, 9000, 7000)
+    assert (state["period"]["paid"], state["period"]["balance"]) == (9000, 7000)
+
+    payment_id = next(payment["id"] for payment in state["payments"] if payment["amount"] == 5000)
+    assert client.delete(f"/api/hours/payments/{payment_id}", headers=user).status_code == 204
+    assert closed_summary(hours_state(client, user)) == (12, 16000, 4000, 12000)
+
+
+def test_period_payments_endpoint_targets_explicit_period(client, user):
+    seed_november(client, user)
+    period_id = hours_state(client, user)["period"]["id"]
     close_period(client, user)
-    response = client.post("/api/hours/payments", json={"amount": 1000, "payment_date": TODAY, "reference_date": TODAY}, headers=user)
-    assert response.status_code == 400
+
+    # Se paga noviembre (cerrado) mientras se mira diciembre.
+    hours_state(client, user, "2026-12-10")
+    response = client.post(f"/api/hours/periods/{period_id}/payments", json={"amount": 3000, "payment_date": "2026-12-10", "method": "Efectivo"}, headers=user)
+    assert response.status_code == 201
+    state = response.json()
+    assert state["period"]["id"] == period_id
+    assert [(payment["amount"], payment["method"]) for payment in state["payments"]] == [(3000, "Efectivo")]
+    assert closed_summary(state) == (12, 16000, 3000, 13000)
+    assert hours_state(client, user, "2026-12-10")["payments"] == []
+
+
+def test_period_payments_endpoint_validation_and_missing_period(client, user):
+    period_id = hours_state(client, user)["period"]["id"]
+    assert client.post(f"/api/hours/periods/{period_id}/payments", json={"amount": 0, "payment_date": TODAY}, headers=user).status_code == 422
+    assert client.post("/api/hours/periods/999/payments", json={"amount": 10, "payment_date": TODAY}, headers=user).status_code == 404
+
+
+def test_open_period_paid_and_balance_are_live(client, user):
+    seed_november(client, user)
+    state = add_hour_payment(client, user, 6000)
+    assert (state["period"]["closed"], state["period"]["paid"], state["period"]["balance"]) == (False, 6000, 10000)
+    assert hours_state(client, user, "2026-12-10")["period"]["paid"] == 0

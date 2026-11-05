@@ -31,6 +31,7 @@ from .schemas import (
     HabitUpdate,
     HourEntryCreate,
     HourEntryOut,
+    HourPaymentCreate,
     HourPaymentOut,
     HourPaymentRequest,
     HoursStateOut,
@@ -722,12 +723,11 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
 
 
 def _close_period(db: Session, period: PayPeriod, user: User) -> None:
+    # Al cerrar se congelan las horas y lo esperado. paid y balance no: los pagos
+    # llegan a mes vencido y se calculan en vivo en _build_hours_state.
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date >= period.start, HourEntry.entry_date <= period.end)).all()
-    payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id)).all()
     period.total_hours = sum(_entry_duration(entry) for entry in entries)
     period.expected = sum(_entry_value(entry, period.rate) for entry in entries)
-    period.paid = sum(payment.amount for payment in payments)
-    period.balance = period.expected - period.paid
     period.closed = True
 
 
@@ -736,11 +736,18 @@ def _build_hours_state(db: Session, user: User, reference: date_type, period: Pa
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id).order_by(HourEntry.entry_date)).all()
     payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id).order_by(HourPayment.payment_date)).all()
     closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
+    paid_by_period = dict(db.execute(select(HourPayment.period_id, func.sum(HourPayment.amount)).where(HourPayment.user_id == user.id).group_by(HourPayment.period_id)).all())
+    # Un período abierto todavía no congeló expected: se calcula con sus jornadas.
+    expected = period.expected if period.closed else sum(_entry_value(entry, period.rate) for entry in entries if period.start <= entry.entry_date <= period.end)
+    paid = paid_by_period.get(period.id, 0.0)
     return HoursStateOut(
-        period=PayPeriodOut.model_validate(period),
+        period=PayPeriodOut.model_validate(period).model_copy(update={"paid": paid, "balance": expected - paid}),
         entries=[HourEntryOut.model_validate(entry) for entry in entries],
         payments=[HourPaymentOut.model_validate(payment) for payment in payments],
-        closed_periods=[ClosedPeriodOut.model_validate(item) for item in closed_periods],
+        closed_periods=[
+            ClosedPeriodOut.model_validate(item).model_copy(update={"paid": paid_by_period.get(item.id, 0.0), "balance": item.expected - paid_by_period.get(item.id, 0.0)})
+            for item in closed_periods
+        ],
     )
 
 
@@ -789,6 +796,16 @@ def create_payment(payload: HourPaymentRequest, user: User = Depends(current_use
     db.add(payment)
     db.commit()
     return _build_hours_state(db, user, reference)
+
+
+@app.post("/api/hours/periods/{period_id}/payments", response_model=HoursStateOut, status_code=status.HTTP_201_CREATED)
+def create_period_payment(period_id: int, payload: HourPaymentCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    period = db.scalar(select(PayPeriod).where(PayPeriod.id == period_id, PayPeriod.user_id == user.id))
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+    db.add(HourPayment(user_id=user.id, period_id=period.id, **payload.model_dump()))
+    db.commit()
+    return _build_hours_state(db, user, period.start, period)
 
 
 @app.delete("/api/hours/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -133,6 +133,8 @@ class PayPeriod(Base):
     closed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     total_hours: Mapped[float] = mapped_column(Float, default=0)
     expected: Mapped[float] = mapped_column(Float, default=0)
+    # paid y balance ya no son fuente de verdad: se calculan en vivo desde hour_payments
+    # porque un período cerrado sigue recibiendo pagos. Se quitan en una migración posterior.
     paid: Mapped[float] = mapped_column(Float, default=0)
     balance: Mapped[float] = mapped_column(Float, default=0)
     payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")

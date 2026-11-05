@@ -142,7 +142,12 @@ RESOURCES = [
     (
         "hour periods",
         _setup_closed_period,
-        [("POST", "/api/hours/periods/{id}/reopen", None), ("GET", "/api/hours/periods/{id}/payments", None), ("DELETE", "/api/hours/periods/{id}", None)],
+        [
+            ("POST", "/api/hours/periods/{id}/reopen", None),
+            ("GET", "/api/hours/periods/{id}/payments", None),
+            ("POST", "/api/hours/periods/{id}/payments", {"amount": 100, "payment_date": TODAY}),
+            ("DELETE", "/api/hours/periods/{id}", None),
+        ],
         _closed_period_exists,
     ),
 ]
