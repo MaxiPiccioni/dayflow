@@ -447,3 +447,11 @@ class SubjectFolderCreate(BaseModel):
 class SubjectFolderOrder(BaseModel):
     ids: list[int]
 
+
+class SubjectNotesUpdate(BaseModel):
+    notes: str = Field(max_length=NOTES_MAX_LENGTH)
+
+
+class SubjectNotesOut(BaseModel):
+    notes: str
+    updated_at: datetime

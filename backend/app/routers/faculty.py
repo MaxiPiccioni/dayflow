@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Iterable
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
@@ -19,6 +20,8 @@ from ..schemas import (
     SubjectFolderCreate,
     SubjectFolderOrder,
     SubjectFolderOut,
+    SubjectNotesOut,
+    SubjectNotesUpdate,
     SubjectOrder,
     SubjectOut,
     SubjectUpdate,
@@ -233,6 +236,15 @@ def update_subject(subject_id: int, payload: SubjectUpdate, user: User = Depends
         setattr(subject, field, value)
     db.commit()
     return _subject_out(db, user, subject.id)
+
+
+@router.patch("/subjects/{subject_id}/notes", response_model=SubjectNotesOut)
+def update_subject_notes(subject_id: int, payload: SubjectNotesUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectNotesOut:
+    # Endpoint aparte y liviano para el guardado automático de las anotaciones del detalle.
+    subject = _get_owned_or_404(db, Subject, subject_id, user)
+    subject.notes = payload.notes
+    db.commit()
+    return SubjectNotesOut(notes=subject.notes, updated_at=datetime.now(timezone.utc))
 
 
 @router.delete("/subjects/{subject_id}", status_code=status.HTTP_204_NO_CONTENT)
