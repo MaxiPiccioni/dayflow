@@ -6,6 +6,15 @@ import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
 import { SubjectForm } from "@/components/faculty/subject-form";
 import { levelLabel } from "@/lib/faculty";
 
+// Aviso de borrado: si es correlativa de otras materias, se listan porque esas correlativas se quitan.
+function deleteMessage(subject, subjects) {
+  const base = `Se van a borrar la materia y sus ${subject.folders.length} carpetas. Esta acción no se puede deshacer.`;
+  if (!subject.required_by.length) return base;
+  const names = subject.required_by.map((id) => subjects.find((item) => item.id === id)?.name).filter(Boolean);
+  const count = names.length === 1 ? "1 materia" : `${names.length} materias`;
+  return `Es correlativa de ${count}: ${names.join(", ")}. Si la borrás, se quitan esas correlativas. ${base}`;
+}
+
 const smallButton = "grid h-8 w-8 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
 // Administración de materias. `initialForm` abre directo el formulario ({} para una nueva o la materia a editar);
@@ -19,7 +28,12 @@ export function SubjectManagerModal({ subjects, initialForm = null, defaultLevel
   const levels = [...new Set(subjects.map((subject) => subject.level))];
   const editing = form && form.id ? form : null;
 
-  const save = (payload) => onSave(payload, editing).then(() => (directForm ? close() : setForm(null)));
+  // Con "Guardar y agregar otra" el formulario queda abierto (él mismo se limpia).
+  const save = (payload, { addAnother }) => onSave(payload, editing).then(() => {
+    if (addAnother) return;
+    if (directForm) close();
+    else setForm(null);
+  });
 
   const move = (level, index, delta) => {
     const ids = subjects.filter((subject) => subject.level === level).map((subject) => subject.id);
@@ -35,7 +49,7 @@ export function SubjectManagerModal({ subjects, initialForm = null, defaultLevel
     <>
       <Modal title={title} close={close}>
         {form ? (
-          <SubjectForm key={editing?.id ?? "new"} subject={editing} defaultLevel={defaultLevel} onSave={save} onCancel={() => (directForm ? close() : setForm(null))} />
+          <SubjectForm key={editing?.id ?? "new"} subject={editing} subjects={subjects} defaultLevel={defaultLevel} onSave={save} onCancel={() => (directForm ? close() : setForm(null))} />
         ) : (
           <div className="mt-5 space-y-5">
             <button type="button" onClick={() => setForm({})} className="flex w-full items-center justify-center gap-1 rounded-xl bg-lime-200 px-4 py-2 text-sm font-semibold text-lime-950"><Plus size={15} /> Agregar materia</button>
@@ -72,7 +86,7 @@ export function SubjectManagerModal({ subjects, initialForm = null, defaultLevel
       {deleteTarget && (
         <ConfirmDialog
           title={`¿Eliminar ${deleteTarget.name}?`}
-          message={`Se van a borrar la materia y sus ${deleteTarget.folders.length} carpetas. Esta acción no se puede deshacer.`}
+          message={deleteMessage(deleteTarget, subjects)}
           onConfirm={() => onDelete(deleteTarget).then(() => setDeleteTarget(null))}
           onCancel={() => setDeleteTarget(null)}
         />

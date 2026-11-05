@@ -4,9 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/faculty/confirm-dialog";
 import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
-import { inputClass } from "@/components/faculty/subject-form";
 import { api } from "@/lib/api";
-import { allowsGrade, formatGrade, levelLabel, STATUS, STATUS_KEYS } from "@/lib/faculty";
+import { allowsGrade, formatGrade, inputClass, levelLabel, STATUS, STATUS_KEYS } from "@/lib/faculty";
 
 const smallButton = "grid h-7 w-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 

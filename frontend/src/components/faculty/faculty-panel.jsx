@@ -66,14 +66,24 @@ export function FacultyPanel() {
   const retry = () => { setLoadError(""); setSubjects(null); setReloadKey((key) => key + 1); };
   const chooseLevel = (value) => { setLevel(value); saveLevel(value); };
 
-  const applySubject = (updated) => setSubjects((current) => sortSubjects(current.map((subject) => (subject.id === updated.id ? updated : subject))));
+  // Cambiar el estado o las correlativas de una materia cambia la disponibilidad y required_by de otras:
+  // se aplica al instante lo que devolvió el backend y después se trae la lista completa.
+  const refreshSubjects = () => api("/faculty/subjects").then(setSubjects).catch((err) => console.warn("No se pudo actualizar la lista de materias", err));
+  const applySubject = (updated) => {
+    setSubjects((current) => sortSubjects(current.map((subject) => (subject.id === updated.id ? { ...subject, ...updated } : subject))));
+    refreshSubjects();
+  };
   const saveSubject = (payload, existing) => {
     if (existing) return api(`/faculty/subjects/${existing.id}`, { method: "PATCH", body: JSON.stringify(payload) }).then(applySubject);
-    return api("/faculty/subjects", { method: "POST", body: JSON.stringify(payload) }).then((created) => setSubjects((current) => sortSubjects([...current, created])));
+    return api("/faculty/subjects", { method: "POST", body: JSON.stringify(payload) }).then((created) => {
+      setSubjects((current) => sortSubjects([...current, created]));
+      refreshSubjects();
+    });
   };
   const deleteSubject = (subject) => api(`/faculty/subjects/${subject.id}`, { method: "DELETE" }).then(() => {
     setSubjects((current) => current.filter((item) => item.id !== subject.id));
     if (selectedId === subject.id) setSelectedId(null);
+    refreshSubjects();
   });
   const reorderSubjects = (levelNumber, ids) => api("/faculty/subjects/order", { method: "PUT", body: JSON.stringify({ level: levelNumber, ids }) }).then(setSubjects);
 

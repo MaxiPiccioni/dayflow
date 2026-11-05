@@ -27,6 +27,9 @@ import {
   Stethoscope,
 } from "lucide-react";
 
+// Estilo de los campos de texto de Facultad (mismo que el resto de la app).
+export const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-lime-500 dark:border-zinc-700 dark:placeholder:text-zinc-500";
+
 // Estados de una materia. Solo "aprobada" y "aprobacion_directa" cuentan como aprobadas y admiten
 // nota final: las promociones son parciales. Debe coincidir con GRADED_SUBJECT_STATUSES del backend.
 export const STATUS = {
