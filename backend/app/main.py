@@ -699,9 +699,14 @@ def _entry_value(entry: HourEntry, rate: float) -> float:
     return _entry_duration(entry) * rate * (2 if entry.extra else 1)
 
 
-# Desde esta fecha los períodos son siempre meses calendario. Los períodos
-# viejos "11 al 10" solo se buscan por rango para fechas anteriores.
+# Desde esta fecha los períodos son siempre meses calendario. Antes es historia
+# cerrada: los períodos viejos "11 al 10" solo se buscan por rango y no se crean nuevos.
 CALENDAR_PERIODS_FROM = date_type(2026, 10, 1)
+
+
+def _ensure_not_history(day: date_type) -> None:
+    if day < CALENDAR_PERIODS_FROM:
+        raise HTTPException(status_code=400, detail="Ese período es historia cerrada")
 
 
 def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
@@ -713,6 +718,8 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
     existing = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, match).order_by(PayPeriod.start.desc()))
     if existing:
         return existing
+    if reference < CALENDAR_PERIODS_FROM:
+        raise HTTPException(status_code=404, detail="No hay registros para esa fecha")
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
     rate = last.rate if last else 0.0
     period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
@@ -759,6 +766,7 @@ def get_hours(reference_date: date_type | None = None, user: User = Depends(curr
 @app.patch("/api/hours/period", response_model=HoursStateOut)
 def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
     reference = payload.reference_date or date_type.today()
+    _ensure_not_history(reference)
     period = _resolve_period(db, user, reference)
     period.rate = payload.rate
     db.commit()
@@ -767,6 +775,7 @@ def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), 
 
 @app.put("/api/hours/entries", response_model=HourEntryOut)
 def upsert_hour_entry(payload: HourEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HourEntry:
+    _ensure_not_history(payload.entry_date)
     entry = db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
     if entry:
         for field, value in payload.model_dump().items():
@@ -820,6 +829,7 @@ def delete_payment(payment_id: int, user: User = Depends(current_user), db: Sess
 @app.post("/api/hours/close", response_model=HoursStateOut)
 def close_period(payload: CloseRequest, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
     reference = payload.reference_date or date_type.today()
+    _ensure_not_history(reference)
     period = _resolve_period(db, user, reference)
     if period.closed:
         raise HTTPException(status_code=400, detail="Period already closed")

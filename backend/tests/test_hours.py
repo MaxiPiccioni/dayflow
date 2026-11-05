@@ -107,9 +107,54 @@ def test_before_cutover_legacy_period_is_found_by_range(client, db, user):
         assert hours_state(client, user, reference)["period"]["id"] == legacy_id
 
 
-def test_before_cutover_without_legacy_period_creates_calendar_month(client, user):
-    period = hours_state(client, user, "2026-05-20")["period"]
-    assert (period["start"], period["end"]) == ("2026-05-01", "2026-05-31")
+def test_before_cutover_without_period_returns_404_and_creates_nothing(client, db, user):
+    response = client.get("/api/hours?reference_date=2026-05-20", headers=user)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No hay registros para esa fecha"
+    assert db.query(PayPeriod).count() == 0
+
+
+HISTORY_DETAIL = "Ese período es historia cerrada"
+
+
+@pytest.mark.parametrize("entry_date", ["2026-09-30", "2026-09-05"], ids=["without-period", "inside-legacy-period"])
+def test_entries_before_cutover_cannot_be_created_or_edited(client, db, user, entry_date):
+    add_legacy_period(db, user, client, "2026-08-11", "2026-09-10", closed=True)
+    response = client.put("/api/hours/entries", json={"entry_date": entry_date}, headers=user)
+    assert response.status_code == 400
+    assert response.json()["detail"] == HISTORY_DETAIL
+    put_hour_entry(client, user, "2026-10-01")  # desde el corte sí se puede
+
+
+def test_rate_and_close_before_cutover_are_rejected(client, db, user):
+    legacy_id = add_legacy_period(db, user, client, "2026-08-11", "2026-09-10")
+    for path, body in (("/api/hours/period", {"rate": 5, "reference_date": "2026-09-01"}), ("/api/hours/close", {"reference_date": "2026-09-01"})):
+        response = client.request("PATCH" if path.endswith("period") else "POST", path, json=body, headers=user)
+        assert response.status_code == 400, path
+        assert response.json()["detail"] == HISTORY_DETAIL
+    period = db.get(PayPeriod, legacy_id)
+    db.refresh(period)
+    assert (period.rate, period.closed) == (1000, False)
+
+
+def test_payments_on_existing_legacy_period_are_allowed(client, db, user):
+    legacy_id = add_legacy_period(db, user, client, "2026-09-11", "2026-09-30", closed=True)
+    state = add_hour_payment(client, user, 700, payment_date="2026-10-15", reference_date="2026-09-20")
+    assert state["period"]["id"] == legacy_id
+    state = client.post(f"/api/hours/periods/{legacy_id}/payments", json={"amount": 300, "payment_date": "2026-10-20"}, headers=user).json()
+    assert state["closed_periods"][0]["paid"] == 1000
+    response = client.post("/api/hours/payments", json={"amount": 10, "payment_date": TODAY, "reference_date": "2026-05-20"}, headers=user)
+    assert response.status_code == 404
+
+
+def test_legacy_period_can_still_be_reopened_and_deleted(client, db, user):
+    legacy_id = add_legacy_period(db, user, client, "2026-08-11", "2026-09-10", closed=True)
+    assert client.post(f"/api/hours/periods/{legacy_id}/reopen", headers=user).json()["period"]["id"] == legacy_id
+    db.get(PayPeriod, legacy_id).closed = True
+    db.commit()
+    assert client.delete(f"/api/hours/periods/{legacy_id}", headers=user).status_code == 200
+    db.expire_all()
+    assert db.query(PayPeriod).filter_by(start=date(2026, 8, 11)).count() == 0
 
 
 def test_from_cutover_legacy_period_overlapping_the_date_is_ignored(client, db, user):
@@ -122,11 +167,10 @@ def test_from_cutover_legacy_period_overlapping_the_date_is_ignored(client, db, 
     assert legacy_id not in (november["id"], october["id"])
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: antes del corte, si no hay período para la fecha se crea el mes calendario completo aunque se superponga con un período viejo vecino")
 def test_before_cutover_new_period_does_not_overlap_legacy_period(client, db, user):
-    add_legacy_period(db, user, client, "2026-06-11", "2026-07-10", closed=True)
-    period = hours_state(client, user, "2026-06-05")["period"]
-    assert period["end"] < "2026-06-11"
+    legacy_id = add_legacy_period(db, user, client, "2026-06-11", "2026-07-10", closed=True)
+    assert client.get("/api/hours?reference_date=2026-06-05", headers=user).status_code == 404
+    assert [period.id for period in db.query(PayPeriod).all()] == [legacy_id]
 
 
 def test_new_period_inherits_rate_of_latest_period(client, user):
