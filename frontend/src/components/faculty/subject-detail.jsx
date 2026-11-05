@@ -3,14 +3,17 @@ import { ArrowLeft, ChevronDown, ChevronUp, Folder, FolderOpen, Pencil, Plus, Tr
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/faculty/confirm-dialog";
+import { NotesEditor } from "@/components/faculty/notes-editor";
 import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
+import { SubjectRequirements } from "@/components/faculty/subject-requirements";
 import { api } from "@/lib/api";
-import { allowsGrade, formatGrade, inputClass, levelLabel, STATUS, STATUS_KEYS } from "@/lib/faculty";
+import { allowsGrade, formatGrade, inputClass, levelLabel, planSummary, STATUS, STATUS_KEYS } from "@/lib/faculty";
 
 const smallButton = "grid h-7 w-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
 // Detalle de una materia dentro del panel. Cada cambio va al backend y onChange recibe la materia actualizada.
-export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
+// onOpen abre el detalle de otra materia (desde las correlativas); onNotesSaved aplica las anotaciones guardadas.
+export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [gradeDraft, setGradeDraft] = useState(null);
@@ -80,6 +83,7 @@ export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{levelLabel(subject.level)}</p>
             <h2 className="mt-1 break-words text-xl font-semibold text-zinc-950 dark:text-zinc-100">{subject.name}</h2>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{planSummary(subject)}</p>
             <div className="mt-1"><StatusBadge status={subject.status} /></div>
           </div>
           <div className="grid gap-3 sm:w-64">
@@ -115,6 +119,14 @@ export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
         </div>
         {notice && <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">{notice}</p>}
         {error && <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>}
+      </Card>
+
+      <Card>
+        <NotesEditor key={subject.id} subjectId={subject.id} initialNotes={subject.notes} onSaved={(notes) => onNotesSaved(subject.id, notes)} />
+      </Card>
+
+      <Card className="space-y-6">
+        <SubjectRequirements subject={subject} subjects={subjects} onOpen={onOpen} />
       </Card>
 
       <Card>

@@ -80,6 +80,12 @@ export function FacultyPanel() {
       refreshSubjects();
     });
   };
+  // Las anotaciones no cambian nada de otras materias: se aplican sin volver a pedir la lista.
+  const applyNotes = (subjectId, notes) => setSubjects((current) => current.map((subject) => (subject.id === subjectId ? { ...subject, notes } : subject)));
+  const openSubject = (subjectId) => {
+    setSelectedId(subjectId);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const deleteSubject = (subject) => api(`/faculty/subjects/${subject.id}`, { method: "DELETE" }).then(() => {
     setSubjects((current) => current.filter((item) => item.id !== subject.id));
     if (selectedId === subject.id) setSelectedId(null);
@@ -130,7 +136,16 @@ export function FacultyPanel() {
   if (selected) {
     return (
       <>
-        <SubjectDetail key={selected.id} subject={selected} onBack={() => setSelectedId(null)} onEdit={() => setManager({ initialForm: selected })} onChange={applySubject} />
+        <SubjectDetail
+          key={selected.id}
+          subject={selected}
+          subjects={subjects}
+          onBack={() => setSelectedId(null)}
+          onEdit={() => setManager({ initialForm: selected })}
+          onChange={applySubject}
+          onOpen={openSubject}
+          onNotesSaved={applyNotes}
+        />
         {modal}
       </>
     );
