@@ -1,9 +1,26 @@
 # Python
 backend/.venv/
-backend/__pycache__/
-backend/**/*.pyc
+.venv/
+__pycache__/
+*.pyc
 backend/*.db
+*.db
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Variables de entorno (se versiona solo .env.example)
+.env
+.env.*
+!.env.example
 backend/.env
+
+# Logs
+*.log
+
+# Configuración local de agentes / editores
+.claude/
+settings.local.json
 
 # Next.js
 frontend/node_modules/
