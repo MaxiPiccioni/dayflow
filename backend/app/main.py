@@ -461,7 +461,7 @@ def list_shopping_items(user: User = Depends(current_user), db: Session = Depend
 
 @app.post("/api/shopping-items", response_model=ShoppingItemOut, status_code=status.HTTP_201_CREATED)
 def create_shopping_item(payload: ShoppingItemCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> ShoppingItem:
-    item = ShoppingItem(user_id=user.id, name=payload.name.strip(), category=payload.category, stock=payload.stock, force_list=payload.force_list)
+    item = ShoppingItem(user_id=user.id, **{**payload.model_dump(), "name": payload.name.strip()})
     db.add(item)
     db.commit()
     db.refresh(item)
