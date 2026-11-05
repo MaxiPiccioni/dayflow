@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -29,6 +29,7 @@ class User(Base):
     shopping_items: Mapped[list["ShoppingItem"]] = relationship(cascade="all, delete-orphan")
     subjects: Mapped[list["Subject"]] = relationship(cascade="all, delete-orphan")
     subject_folders: Mapped[list["SubjectFolder"]] = relationship(cascade="all, delete-orphan")
+    subject_requirements: Mapped[list["SubjectRequirement"]] = relationship(cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -193,10 +194,24 @@ def _utc_now() -> datetime:
 
 class Subject(Base):
     __tablename__ = "subjects"
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_subjects_user_id_name"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_subjects_user_id_name"),
+        # Los NULL no chocan entre sí: varias materias pueden no tener código.
+        UniqueConstraint("user_id", "code", name="uq_subjects_user_id_code"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_subjects_user_id_users"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    # Número de la materia en el plan de estudios (opcional).
+    code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Optativa: suma créditos al aprobarse. credits solo tiene valor si elective es true.
+    elective: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A (anual), 1C, 2C, 1C-2C o 2C-1C.
+    modality: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    weekly_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Anotaciones rápidas del detalle (links, horarios, palabras sueltas).
+    notes: Mapped[str] = mapped_column(Text, default="", server_default="")
     # Nivel de cursado (1° año, 2° año...).
     level: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30), default="por_cursar")
@@ -210,6 +225,8 @@ class Subject(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     # El ORM borra las carpetas al borrar la materia (SQLite no aplica el ON DELETE CASCADE de la FK).
     folders: Mapped[list["SubjectFolder"]] = relationship(cascade="all, delete-orphan", order_by="SubjectFolder.position")
+    # Correlativas que necesita esta materia. Las filas donde es la requerida se borran en el router.
+    requirements: Mapped[list["SubjectRequirement"]] = relationship(cascade="all, delete-orphan", foreign_keys="SubjectRequirement.subject_id")
 
 
 class SubjectFolder(Base):
@@ -220,3 +237,16 @@ class SubjectFolder(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", name="fk_subject_folders_subject_id_subjects", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(60))
     position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SubjectRequirement(Base):
+    """Correlativa: para cursar subject_id hace falta required_id cursada o aprobada."""
+
+    __tablename__ = "subject_requirements"
+    __table_args__ = (UniqueConstraint("subject_id", "required_id", name="uq_subject_requirements_subject_id_required_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_subject_requirements_user_id_users"), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", name="fk_subject_requirements_subject_id_subjects", ondelete="CASCADE"), index=True)
+    required_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", name="fk_subject_requirements_required_id_subjects", ondelete="CASCADE"), index=True)
+    # "cursada" o "aprobada".
+    kind: Mapped[str] = mapped_column(String(10))
