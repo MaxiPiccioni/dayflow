@@ -1,31 +1,31 @@
 import { useEffect, useState } from "react";
 import { GraduationCap, Plus, Settings2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { StatusBadge, SubjectCard } from "@/components/faculty/subject-card";
 import { SubjectDetail } from "@/components/faculty/subject-detail";
 import { SubjectManagerModal } from "@/components/faculty/subject-manager-modal";
 import { api } from "@/lib/api";
-import { formatGrade, levelLabel, sortSubjects, summarize } from "@/lib/faculty";
+import { formatGrade, KIND_FILTERS, levelLabel, matchesKind, REQUIRED_ELECTIVE_CREDITS, sortSubjects, summarize } from "@/lib/faculty";
 
 const LEVEL_KEY = "dayflow_faculty_level";
+const KIND_KEY = "dayflow_faculty_kind";
 const ALL = "all";
 
-function readSavedLevel() {
+function readSaved(key) {
   try {
-    return localStorage.getItem(LEVEL_KEY) ?? ALL;
+    return localStorage.getItem(key) ?? ALL;
   } catch (err) {
-    // Sin acceso a localStorage (navegación privada, prerender): se arranca en "Todos".
-    console.warn("No se pudo leer el nivel guardado de Facultad", err);
+    // Sin acceso a localStorage (navegación privada, prerender): se arranca en "Todos"/"Todas".
+    console.warn(`No se pudo leer ${key}`, err);
     return ALL;
   }
 }
 
-function saveLevel(level) {
+function save(key, value) {
   try {
-    localStorage.setItem(LEVEL_KEY, level);
+    localStorage.setItem(key, value);
   } catch (err) {
-    console.warn("No se pudo guardar el nivel elegido de Facultad", err);
+    console.warn(`No se pudo guardar ${key}`, err);
   }
 }
 
@@ -37,21 +37,26 @@ function SubjectGrid({ subjects, onOpen }) {
   );
 }
 
-function SummaryTile({ label, children }) {
+function StatTile({ label, value, detail }) {
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
-      {children}
+      <p className="mt-1 text-3xl font-bold leading-none text-zinc-950 dark:text-zinc-50">{value}</p>
+      {detail && <p className="mt-1.5 text-xs text-zinc-400">{detail}</p>}
     </div>
   );
 }
+
+const chipClass = (active) =>
+  `rounded-full px-3 py-1.5 text-xs font-medium ${active ? "bg-zinc-900 text-white dark:bg-lime-400 dark:text-zinc-950" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`;
 
 // Pestaña Facultad: carga sus propios datos, como ShoppingPanel.
 export function FacultyPanel() {
   const [subjects, setSubjects] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [level, setLevel] = useState(readSavedLevel);
+  const [level, setLevel] = useState(() => readSaved(LEVEL_KEY));
+  const [kind, setKind] = useState(() => readSaved(KIND_KEY));
   const [selectedId, setSelectedId] = useState(null);
   const [manager, setManager] = useState(null); // { initialForm } mientras el modal está abierto
 
@@ -64,7 +69,8 @@ export function FacultyPanel() {
   }, [reloadKey]);
 
   const retry = () => { setLoadError(""); setSubjects(null); setReloadKey((key) => key + 1); };
-  const chooseLevel = (value) => { setLevel(value); saveLevel(value); };
+  const chooseLevel = (value) => { setLevel(value); save(LEVEL_KEY, value); };
+  const chooseKind = (value) => { setKind(value); save(KIND_KEY, value); };
 
   // Cambiar el estado o las correlativas de una materia cambia la disponibilidad y required_by de otras:
   // se aplica al instante lo que devolvió el backend y después se trae la lista completa.
@@ -97,7 +103,12 @@ export function FacultyPanel() {
     <CardHeader
       eyebrow="Facultad"
       title="Mi carrera"
-      action={subjects && <button type="button" onClick={() => setManager({ initialForm: null })} aria-label="Administrar materias" title="Administrar materias" className="grid h-9 w-9 place-items-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:hover:text-zinc-100"><Settings2 size={17} /></button>}
+      action={subjects && (
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setManager({ initialForm: {} })} className="flex items-center gap-1 rounded-xl bg-lime-200 px-3 py-2 text-sm font-semibold text-lime-950"><Plus size={15} /> Agregar materia</button>
+          <button type="button" onClick={() => setManager({ initialForm: null })} aria-label="Administrar materias" title="Administrar materias" className="grid h-9 w-9 place-items-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:hover:text-zinc-100"><Settings2 size={17} /></button>
+        </div>
+      )}
     />
   );
 
@@ -116,8 +127,10 @@ export function FacultyPanel() {
     return <Card>{header}<p className="py-8 text-center text-sm text-zinc-400">Cargando materias…</p></Card>;
   }
 
-  const levels = [...new Set(subjects.map((subject) => subject.level))];
-  // Si el nivel guardado ya no tiene materias, se muestra "Todos".
+  const activeKind = KIND_FILTERS.some(([value]) => value === kind) ? kind : ALL;
+  const visible = subjects.filter((subject) => matchesKind(subject, activeKind));
+  const levels = [...new Set(visible.map((subject) => subject.level))];
+  // Si el nivel guardado ya no tiene materias (con el tipo elegido), se muestra "Todos".
   const activeLevel = level !== ALL && levels.includes(Number(level)) ? Number(level) : ALL;
   const selected = subjects.find((subject) => subject.id === selectedId);
   const summary = summarize(subjects);
@@ -162,43 +175,56 @@ export function FacultyPanel() {
             <button type="button" onClick={() => setManager({ initialForm: {} })} className="flex items-center gap-1 rounded-xl bg-lime-200 px-4 py-2 text-sm font-semibold text-lime-950"><Plus size={15} /> Agregar materia</button>
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <SummaryTile label="Materias aprobadas">
-              <p className="mt-1 text-2xl font-semibold">{summary.approved} <span className="text-base text-zinc-400">/ {summary.total}</span></p>
-              <div className="mt-3"><Progress value={summary.total ? (summary.approved / summary.total) * 100 : 0} /></div>
-            </SummaryTile>
-            <SummaryTile label="Por estado">
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {summary.byStatus.map(({ key, count }) => <span key={key} className="flex items-center gap-1"><StatusBadge status={key} /><span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{count}</span></span>)}
-              </div>
-            </SummaryTile>
-            <SummaryTile label="Promedio de finales">
-              <p className="mt-1 text-2xl font-semibold">{summary.average === null ? "—" : formatGrade(summary.average)}</p>
-            </SummaryTile>
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatTile label="Materias aprobadas" value={summary.curricularApproved} detail={`de ${summary.curricularTotal}`} />
+              <StatTile label="Créditos de electivas" value={summary.electiveCredits} detail={`de ${REQUIRED_ELECTIVE_CREDITS} requeridos`} />
+              <StatTile label="Promedio" value={summary.average === null ? "—" : formatGrade(summary.average)} detail={`${summary.gradedCount} con nota`} />
+              <StatTile label="Disponibles para cursar" value={summary.availableCount} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2" aria-label="Materias por estado">
+              {summary.byStatus.map(({ key, count }) => (
+                <span key={key} className="flex items-center gap-1">
+                  <StatusBadge status={key} />
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{count}</span>
+                </span>
+              ))}
+            </div>
+          </>
         )}
       </Card>
 
       {subjects.length > 0 && (
         <Card>
-          <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar por nivel">
-            {[ALL, ...levels].map((value) => (
-              <button key={value} type="button" onClick={() => chooseLevel(String(value))} aria-pressed={activeLevel === value} className={`rounded-full px-3 py-1.5 text-xs font-medium ${activeLevel === value ? "bg-zinc-900 text-white dark:bg-lime-400 dark:text-zinc-950" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
-                {value === ALL ? "Todos" : levelLabel(value)}
-              </button>
-            ))}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar por nivel">
+              {[ALL, ...levels].map((value) => (
+                <button key={value} type="button" onClick={() => chooseLevel(String(value))} aria-pressed={activeLevel === value} className={chipClass(activeLevel === value)}>
+                  {value === ALL ? "Todos" : levelLabel(value)}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-full bg-zinc-100 p-1 dark:bg-zinc-800" role="group" aria-label="Filtrar por tipo">
+              {KIND_FILTERS.map(([value, label]) => (
+                <button key={value} type="button" onClick={() => chooseKind(value)} aria-pressed={activeKind === value} className={`rounded-full px-3 py-1 text-xs font-medium ${activeKind === value ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          {activeLevel === ALL ? (
+          {visible.length === 0 ? (
+            <p className="py-6 text-center text-sm text-zinc-400">No hay materias de este tipo.</p>
+          ) : activeLevel === ALL ? (
             <div className="space-y-6">
               {levels.map((levelNumber) => (
                 <section key={levelNumber}>
                   <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{levelLabel(levelNumber)}</h3>
-                  <SubjectGrid subjects={subjects.filter((subject) => subject.level === levelNumber)} onOpen={setSelectedId} />
+                  <SubjectGrid subjects={visible.filter((subject) => subject.level === levelNumber)} onOpen={openSubject} />
                 </section>
               ))}
             </div>
           ) : (
-            <SubjectGrid subjects={subjects.filter((subject) => subject.level === activeLevel)} onOpen={setSelectedId} />
+            <SubjectGrid subjects={visible.filter((subject) => subject.level === activeLevel)} onOpen={openSubject} />
           )}
         </Card>
       )}
