@@ -1,7 +1,9 @@
 from datetime import date, datetime
-from typing import Literal
+from decimal import Decimal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class UserCreate(BaseModel):
@@ -304,3 +306,88 @@ class PomodoroLogOut(BaseModel):
 
 class PomodoroLogCreate(BaseModel):
     seconds: int = Field(ge=1, le=3600)
+
+
+# --- Facultad ---
+
+SubjectStatus = Literal["por_cursar", "cursando", "regular", "promocion_practica", "promocion_teorica", "aprobacion_directa", "aprobada", "libre"]
+# Solo estos estados significan materia aprobada y admiten nota final. Las promociones son parciales.
+GRADED_SUBJECT_STATUSES = frozenset({"aprobada", "aprobacion_directa"})
+GRADE_REQUIRES_APPROVAL = "Solo las materias aprobadas pueden tener nota final"
+
+SubjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+FolderName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+SubjectLevel = Annotated[int, Field(ge=1, le=8)]
+SubjectGrade = Annotated[Decimal, Field(ge=1, le=10, max_digits=4, decimal_places=2)]
+
+
+def grade_requires_approval_error() -> PydanticCustomError:
+    # Error propio para que el 422 traiga el mensaje tal cual, sin el prefijo "Value error, ".
+    return PydanticCustomError("grade_requires_approval", GRADE_REQUIRES_APPROVAL)
+
+
+class SubjectCreate(BaseModel):
+    name: SubjectName
+    level: SubjectLevel
+    status: SubjectStatus = "por_cursar"
+    grade: SubjectGrade | None = None
+    icon: str = Field(default="book", min_length=1, max_length=40)
+    color: str = Field(default="lime", min_length=1, max_length=20)
+    position: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def grade_only_when_approved(self) -> "SubjectCreate":
+        if self.grade is not None and self.status not in GRADED_SUBJECT_STATUSES:
+            raise grade_requires_approval_error()
+        return self
+
+
+class SubjectUpdate(BaseModel):
+    name: SubjectName | None = None
+    level: SubjectLevel | None = None
+    status: SubjectStatus | None = None
+    grade: SubjectGrade | None = None
+    icon: str | None = Field(default=None, min_length=1, max_length=40)
+    color: str | None = Field(default=None, min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def no_null_for_required_fields(self) -> "SubjectUpdate":
+        # Solo grade se puede mandar en null (para borrar la nota); el resto se omite si no cambia.
+        for field in ("name", "level", "status", "icon", "color"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise PydanticCustomError("not_nullable", "{field} no puede ser null", {"field": field})
+        return self
+
+
+class SubjectFolderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    position: int
+
+
+class SubjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    level: int
+    status: SubjectStatus
+    grade: float | None
+    icon: str
+    color: str
+    position: int
+    created_at: datetime
+    folders: list[SubjectFolderOut]
+
+
+class SubjectOrder(BaseModel):
+    level: SubjectLevel
+    ids: list[int]
+
+
+class SubjectFolderCreate(BaseModel):
+    name: FolderName
+
+
+class SubjectFolderOrder(BaseModel):
+    ids: list[int]

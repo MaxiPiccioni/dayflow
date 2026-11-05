@@ -13,6 +13,7 @@ from .database import get_db
 from .deps import current_user
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
 from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
+from .routers import faculty
 from .schemas import (
     CategoryCreate,
     CategoryOut,
@@ -75,6 +76,9 @@ app.add_middleware(
     # Retry-After no es un header expuesto por defecto: sin esto el frontend no puede leerlo en un 429.
     expose_headers=["Retry-After"],
 )
+
+
+app.include_router(faculty.router)
 
 
 @app.middleware("http")
