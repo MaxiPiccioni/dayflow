@@ -85,7 +85,8 @@ def _setup_subject(client, db, a):
 
 def _subject_exists(client, a, ctx):
     subjects = client.get("/api/faculty/subjects", headers=a).json()
-    return [(s["id"], s["name"], s["status"], s["grade"], [f["id"] for f in s["folders"]]) for s in subjects] == [(ctx["id"], MARK, "aprobada", 8, ctx["folder_ids"])]
+    own = [s for s in subjects if s["id"] == ctx["id"]]
+    return [(s["name"], s["status"], s["grade"], s["notes"], [f["id"] for f in s["folders"]]) for s in own] == [(MARK, "aprobada", 8, "", ctx["folder_ids"])]
 
 
 def _task_exists(client, a, ctx):
@@ -174,6 +175,8 @@ RESOURCES = [
         ],
         _subject_exists,
     ),
+    ("subject requirements", _setup_subject, [("PATCH", "/api/faculty/subjects/{id}", {"requires_cursada": [], "requires_aprobada": []})], _subject_exists),
+    ("subject notes", _setup_subject, [("PATCH", "/api/faculty/subjects/{id}/notes", {"notes": "hackeada"})], _subject_exists),
     (
         "subject folders",
         _setup_subject,
@@ -224,6 +227,21 @@ def test_own_folder_order_cannot_include_foreign_folders(client, db, users):
     response = client.put(f"/api/faculty/subjects/{own['id']}/folders/order", json={"ids": [*own_ids, ctx_a["folder_id"]]}, headers=b)
     assert response.status_code == 400
     assert _subject_exists(client, a, ctx_a)
+
+
+def test_other_user_cannot_use_foreign_subjects_as_requirements(client, db, users):
+    a, b = users
+    ctx_a = _setup_subject(client, db, a)
+    own = client.post("/api/faculty/subjects", json={"name": "De B", "level": 2}, headers=b).json()
+    for method, path, body in (
+        ("POST", "/api/faculty/subjects", {"name": "Otra de B", "level": 2, "requires_aprobada": [ctx_a["id"]]}),
+        ("PATCH", f"/api/faculty/subjects/{own['id']}", {"requires_cursada": [ctx_a["id"]]}),
+    ):
+        response = client.request(method, path, json=body, headers=b)
+        assert (response.status_code, response.json()["detail"]) == (422, "Correlativa inválida")
+    subject_a = client.get("/api/faculty/subjects", headers=a).json()[0]
+    assert subject_a["required_by"] == []
+    assert [s["name"] for s in client.get("/api/faculty/subjects", headers=b).json()] == ["De B"]
 
 
 def test_pomodoro_settings_and_logs_are_per_user(client, users):

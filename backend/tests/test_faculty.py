@@ -1,6 +1,6 @@
 import pytest
 
-from app.models import Subject, SubjectFolder
+from app.models import Subject, SubjectFolder, SubjectRequirement
 
 GRADE_ERROR = "Solo las materias aprobadas pueden tener nota final"
 DEFAULT_FOLDERS = ["FINAL", "PRÁCTICO", "TEÓRICO", "TPS"]
@@ -291,3 +291,225 @@ def test_subject_rows_store_decimal_grade_and_utc_created_at(client, db, user):
     row = db.get(Subject, subject["id"])
     assert str(row.grade) == "7.75"
     assert row.created_at is not None
+
+
+# --- Parte 2: datos del plan ---
+
+ELECTIVE_ERROR = "Las electivas tienen que tener créditos"
+
+
+def test_create_with_plan_data(client, user):
+    subject = create_subject(client, user, code=" 19 ", modality="1C-2C", weekly_hours=6, elective=True, credits=3)
+    assert {key: subject[key] for key in ("code", "modality", "weekly_hours", "elective", "credits", "notes")} == {
+        "code": "19",
+        "modality": "1C-2C",
+        "weekly_hours": 6,
+        "elective": True,
+        "credits": 3,
+        "notes": "",
+    }
+    plain = create_subject(client, user, name="Otra")
+    assert (plain["code"], plain["elective"], plain["credits"], plain["modality"], plain["weekly_hours"]) == (None, False, None, None, None)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"elective": True, "credits": 0},
+        {"elective": True, "credits": 21},
+        {"weekly_hours": 0},
+        {"weekly_hours": 21},
+        {"modality": "3C"},
+        {"code": "x" * 11},
+        {"code": "   "},
+    ],
+    ids=["credits-0", "credits-21", "hours-0", "hours-21", "bad-modality", "long-code", "blank-code"],
+)
+def test_plan_data_validation(client, user, fields):
+    assert client.post("/api/faculty/subjects", json={"name": "X", "level": 1, **fields}, headers=user).status_code == 422
+
+
+@pytest.mark.parametrize("modality", ["A", "1C", "2C", "1C-2C", "2C-1C"])
+def test_all_modalities_are_accepted(client, user, modality):
+    assert create_subject(client, user, modality=modality)["modality"] == modality
+
+
+def test_elective_needs_credits_and_non_elective_drops_them(client, user):
+    response = client.post("/api/faculty/subjects", json={"name": "X", "level": 1, "elective": True}, headers=user)
+    assert response.status_code == 422
+    assert error_message(response) == ELECTIVE_ERROR
+    assert create_subject(client, user, credits=5)["credits"] is None
+
+
+def test_patch_elective_and_credits_against_resulting_state(client, user):
+    elective = create_subject(client, user, elective=True, credits=4)
+    assert patch_subject(client, user, elective["id"], credits=6).json()["credits"] == 6
+    response = patch_subject(client, user, elective["id"], credits=None)
+    assert (response.status_code, error_message(response)) == (422, ELECTIVE_ERROR)
+    body = patch_subject(client, user, elective["id"], elective=False).json()
+    assert (body["elective"], body["credits"]) == (False, None)
+
+    curricular = create_subject(client, user, name="Curricular")
+    response = patch_subject(client, user, curricular["id"], elective=True)
+    assert (response.status_code, error_message(response)) == (422, ELECTIVE_ERROR)
+    assert patch_subject(client, user, curricular["id"], credits=3).json()["credits"] is None
+    body = patch_subject(client, user, curricular["id"], elective=True, credits=2).json()
+    assert (body["elective"], body["credits"]) == (True, 2)
+    assert patch_subject(client, user, curricular["id"], elective=None).status_code == 422
+
+
+def test_code_is_unique_per_user_and_nulls_do_not_clash(client, user, make_user):
+    first = create_subject(client, user, code="19")
+    create_subject(client, user, name="Sin código 1")
+    create_subject(client, user, name="Sin código 2")
+    response = client.post("/api/faculty/subjects", json={"name": "Otra", "level": 1, "code": "19"}, headers=user)
+    assert (response.status_code, response.json()["detail"]) == (409, "Ya existe una materia con ese código")
+    other = create_subject(client, user, name="Otra", code="20")
+    assert patch_subject(client, user, other["id"], code=" 19").status_code == 409
+    assert patch_subject(client, user, first["id"], code="19").status_code == 200  # el propio código no choca
+    assert patch_subject(client, user, first["id"], code=None).json()["code"] is None
+    assert create_subject(client, make_user("otra@example.com"), code="20")["code"] == "20"
+
+
+def test_patch_modality_and_hours_can_be_cleared(client, user):
+    subject = create_subject(client, user, modality="A", weekly_hours=4)
+    body = patch_subject(client, user, subject["id"], modality=None, weekly_hours=None).json()
+    assert (body["modality"], body["weekly_hours"]) == (None, None)
+
+
+# --- Parte 2: correlativas ---
+
+
+def by_id(client, user) -> dict[int, dict]:
+    return {subject["id"]: subject for subject in list_subjects(client, user)}
+
+
+def test_create_with_both_requirement_lists(client, user):
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B")
+    c = create_subject(client, user, name="C", level=2, requires_aprobada=[a["id"]], requires_cursada=[b["id"]])
+    assert (c["requires_aprobada"], c["requires_cursada"], c["required_by"]) == ([a["id"]], [b["id"]], [])
+    subjects = by_id(client, user)
+    assert subjects[a["id"]]["required_by"] == [c["id"]]
+    assert subjects[b["id"]]["required_by"] == [c["id"]]
+
+
+def test_id_in_both_lists_stays_as_aprobada(client, user):
+    a = create_subject(client, user, name="A")
+    c = create_subject(client, user, name="C", requires_aprobada=[a["id"]], requires_cursada=[a["id"], a["id"]])
+    assert (c["requires_aprobada"], c["requires_cursada"]) == ([a["id"]], [])
+
+
+def test_self_requirement_is_rejected(client, user):
+    a = create_subject(client, user, name="A")
+    response = patch_subject(client, user, a["id"], requires_cursada=[a["id"]])
+    assert (response.status_code, response.json()["detail"]) == (422, "Una materia no puede ser correlativa de sí misma")
+
+
+def test_direct_and_indirect_cycles_are_rejected(client, user):
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B", requires_cursada=[a["id"]])
+    c = create_subject(client, user, name="C", requires_aprobada=[b["id"]])
+    # Directo: B requiere A, A no puede requerir B. Indirecto: C -> B -> A, A no puede requerir C.
+    for payload in ({"requires_aprobada": [b["id"]]}, {"requires_cursada": [c["id"]]}):
+        response = patch_subject(client, user, a["id"], **payload)
+        assert (response.status_code, response.json()["detail"]) == (422, "Esa correlativa genera un ciclo")
+    assert (by_id(client, user)[a["id"]]["requires_aprobada"], by_id(client, user)[a["id"]]["requires_cursada"]) == ([], [])
+
+
+def test_shared_requirement_is_not_a_cycle(client, user):
+    # Diamante: B y C requieren A, y D requiere B y C. Que E requiera D no es un ciclo.
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B", requires_cursada=[a["id"]])
+    c = create_subject(client, user, name="C", requires_cursada=[a["id"]])
+    d = create_subject(client, user, name="D", requires_aprobada=[b["id"], c["id"]])
+    e = create_subject(client, user, name="E")
+    assert patch_subject(client, user, e["id"], requires_cursada=[d["id"]]).json()["requires_cursada"] == [d["id"]]
+
+
+def test_foreign_or_missing_requirement_is_invalid(client, user, make_user):
+    foreign = create_subject(client, make_user("otra@example.com"), name="Ajena")
+    for required in (foreign["id"], 999):
+        response = client.post("/api/faculty/subjects", json={"name": "X", "level": 1, "requires_cursada": [required]}, headers=user)
+        assert (response.status_code, response.json()["detail"]) == (422, "Correlativa inválida")
+    assert list_subjects(client, user) == []
+
+
+def test_patch_replaces_given_lists_and_keeps_omitted_ones(client, user):
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B")
+    c = create_subject(client, user, name="C")
+    target = create_subject(client, user, name="T", requires_aprobada=[a["id"]], requires_cursada=[b["id"]])
+    body = patch_subject(client, user, target["id"], requires_cursada=[c["id"]]).json()
+    assert (body["requires_aprobada"], body["requires_cursada"]) == ([a["id"]], [c["id"]])
+    # Pasar una requerida de cursada a aprobada actualiza la fila existente.
+    body = patch_subject(client, user, target["id"], requires_aprobada=[a["id"], c["id"]]).json()
+    assert (body["requires_aprobada"], body["requires_cursada"]) == ([a["id"], c["id"]], [])
+    body = patch_subject(client, user, target["id"], requires_aprobada=[], name="T2").json()
+    assert (body["requires_aprobada"], body["requires_cursada"], body["name"]) == ([], [], "T2")
+    assert patch_subject(client, user, target["id"], requires_aprobada=None).status_code == 422
+
+
+# --- Parte 2: disponibilidad ---
+
+CURSADA_OK = {"regular", "promocion_practica", "promocion_teorica", "aprobacion_directa", "aprobada"}
+APROBADA_OK = {"aprobacion_directa", "aprobada"}
+ALL_STATUSES = ["por_cursar", "cursando", "regular", "promocion_practica", "promocion_teorica", "aprobacion_directa", "aprobada", "libre"]
+
+
+@pytest.mark.parametrize("kind", ["cursada", "aprobada"])
+@pytest.mark.parametrize("required_status", ALL_STATUSES)
+def test_availability_for_each_status_and_kind(client, user, kind, required_status):
+    required = create_subject(client, user, name="Requerida", status=required_status)
+    target = create_subject(client, user, name="Objetivo", level=2, **{f"requires_{kind}": [required["id"]]})
+    expected = required_status in (CURSADA_OK if kind == "cursada" else APROBADA_OK)
+    assert target["available"] is expected
+    assert target["missing"] == ([] if expected else [{"id": required["id"], "name": "Requerida", "kind": kind}])
+
+
+def test_missing_lists_exactly_what_is_missing_and_updates_with_status(client, user):
+    a = create_subject(client, user, name="Análisis", status="aprobada")
+    b = create_subject(client, user, name="Álgebra", status="regular")
+    c = create_subject(client, user, name="Física", status="cursando")
+    target = create_subject(client, user, name="Economía", level=3, requires_aprobada=[a["id"], b["id"]], requires_cursada=[c["id"]])
+    assert target["available"] is False
+    assert target["missing"] == [{"id": b["id"], "name": "Álgebra", "kind": "aprobada"}, {"id": c["id"], "name": "Física", "kind": "cursada"}]
+    patch_subject(client, user, b["id"], status="aprobacion_directa")
+    patch_subject(client, user, c["id"], status="promocion_teorica")
+    refreshed = by_id(client, user)[target["id"]]
+    assert (refreshed["available"], refreshed["missing"]) == (True, [])
+    assert create_subject(client, user, name="Sin correlativas")["available"] is True
+
+
+def test_deleting_a_subject_cleans_requirements_in_both_directions(client, db, user):
+    base = create_subject(client, user, name="Base", status="cursando")
+    middle = create_subject(client, user, name="Medio", level=2, requires_aprobada=[base["id"]])
+    top = create_subject(client, user, name="Final", level=3, requires_cursada=[middle["id"]])
+    assert top["available"] is False
+    assert client.delete(f"/api/faculty/subjects/{middle['id']}", headers=user).status_code == 204
+    subjects = by_id(client, user)
+    assert (subjects[top["id"]]["requires_cursada"], subjects[top["id"]]["available"], subjects[top["id"]]["missing"]) == ([], True, [])
+    assert subjects[base["id"]]["required_by"] == []
+    db.expire_all()
+    assert db.query(SubjectRequirement).count() == 0
+
+
+# --- Parte 2: anotaciones ---
+
+
+def test_notes_are_saved_and_returned(client, user):
+    subject = create_subject(client, user)
+    text = "Horario: martes 18 h\nhttps://campus.example.com/aula"
+    response = client.patch(f"/api/faculty/subjects/{subject['id']}/notes", json={"notes": text}, headers=user)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["notes"] == text and body["updated_at"]
+    assert list_subjects(client, user)[0]["notes"] == text
+
+
+def test_notes_length_limit_and_missing_subject(client, user):
+    subject = create_subject(client, user)
+    path = f"/api/faculty/subjects/{subject['id']}/notes"
+    assert client.patch(path, json={"notes": "x" * 5000}, headers=user).status_code == 200
+    assert client.patch(path, json={"notes": "x" * 5001}, headers=user).status_code == 422
+    assert client.patch("/api/faculty/subjects/999/notes", json={"notes": "x"}, headers=user).status_code == 404
