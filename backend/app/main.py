@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
-from .rate_limit import auth_rate_limit, rate_limit
+from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
 from .schemas import (
     CategoryCreate,
     CategoryOut,
@@ -60,13 +60,16 @@ from .schemas import (
 )
 from .security import create_access_token, get_user_id, hash_password, verify_password
 
-app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)])
+# En producción no se expone la documentación interactiva ni el esquema OpenAPI.
+docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.is_production else {}
+app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)], **docs_kwargs)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+# La autenticación va por header Authorization (Bearer), no por cookies, así que
+# no hace falta allow_credentials.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",")],
-    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -78,6 +81,8 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -118,9 +123,13 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
 
 @app.post("/api/auth/login", response_model=Token, dependencies=[Depends(auth_rate_limit)])
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    email = payload.email.lower()
+    ensure_login_allowed(email)
+    user = db.scalar(select(User).where(User.email == email))
     if not user or not verify_password(payload.password, user.password_hash):
+        register_login_failure(email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    clear_login_failures(email)
     return Token(access_token=create_access_token(user.id))
 
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, AUTH_EXPIRED_EVENT, TOKEN_KEY } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -20,13 +20,38 @@ export function AuthGate({ children }) {
 
   useEffect(() => {
     if (status !== "checking") return;
-    api("/auth/me").then((me) => { setUser(me); setStatus("authed"); }).catch(() => { localStorage.removeItem("dayflow_token"); setStatus("anon"); });
+    api("/auth/me")
+      .then((me) => { setUser(me); setStatus("authed"); })
+      .catch((err) => {
+        // Solo un 401 significa que la sesión no sirve. Si el servidor está despertando
+        // o no hay red, no se cierra la sesión: se ofrece reintentar.
+        if (err.status === 401 || !localStorage.getItem(TOKEN_KEY)) {
+          localStorage.removeItem(TOKEN_KEY);
+          setStatus("anon");
+        } else {
+          setError(err.message);
+          setStatus("unreachable");
+        }
+      });
   }, [status]);
+
+  // El token venció (o fue rechazado) en cualquier pantalla: volver al login.
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setForm({ email: "", password: "", fullName: "" });
+      setMode("login");
+      setError("Tu sesión venció. Iniciá sesión de nuevo.");
+      setStatus("anon");
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, []);
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   const logout = () => {
-    localStorage.removeItem("dayflow_token");
+    localStorage.removeItem(TOKEN_KEY);
     setUser(null);
     setForm({ email: "", password: "", fullName: "" });
     setMode("login");
@@ -41,7 +66,7 @@ export function AuthGate({ children }) {
       const path = mode === "login" ? "/auth/login" : "/auth/register";
       const payload = mode === "login" ? { email: form.email, password: form.password } : { email: form.email, password: form.password, full_name: form.fullName };
       const { access_token } = await api(path, { method: "POST", body: JSON.stringify(payload) });
-      localStorage.setItem("dayflow_token", access_token);
+      localStorage.setItem(TOKEN_KEY, access_token);
       const me = await api("/auth/me");
       setUser(me);
       setStatus("authed");
@@ -56,6 +81,19 @@ export function AuthGate({ children }) {
     return (
       <div className="grid min-h-screen place-items-center bg-[#f4f5ef] dark:bg-zinc-950">
         <Loader2 className="animate-spin text-zinc-300 dark:text-zinc-700" size={22} />
+      </div>
+    );
+  }
+
+  if (status === "unreachable") {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#f4f5ef] px-5 dark:bg-zinc-950">
+        <div className="w-full max-w-sm rounded-3xl border border-zinc-200 bg-white/90 p-6 text-center shadow-lg shadow-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900/90">
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">{error}</p>
+          <Button type="button" size="lg" className="mt-5 w-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-lime-400 dark:text-zinc-950 dark:hover:bg-lime-300" onClick={() => { setError(""); setStatus("checking"); }}>
+            Reintentar
+          </Button>
+        </div>
       </div>
     );
   }

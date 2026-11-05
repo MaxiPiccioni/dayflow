@@ -5,10 +5,16 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.15
+      - key: ENVIRONMENT
+        value: production
+      # Render pone 1 proxy delante de la app. La IP del cliente se lee de
+      # X-Forwarded-For contando desde la derecha (ver app/rate_limit.py).
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
