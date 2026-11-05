@@ -96,16 +96,65 @@ export const formatGrade = (grade) => Number(grade).toLocaleString("es-AR", { mi
 // Mismo orden que devuelve el backend: nivel, posición y id.
 export const sortSubjects = (subjects) => [...subjects].sort((a, b) => a.level - b.level || a.position - b.position || a.id - b.id);
 
+// Créditos de electivas que pide el plan para recibirse.
+export const REQUIRED_ELECTIVE_CREDITS = 20;
+
+// La disponibilidad para cursar solo se muestra en materias que todavía no se cursan.
+export const showsAvailability = (status) => status === "por_cursar" || status === "libre";
+
+export const MODALITIES = {
+  A: "Anual",
+  "1C": "1° cuatrimestre",
+  "2C": "2° cuatrimestre",
+  "1C-2C": "1C y 2C",
+  "2C-1C": "2C y 1C",
+};
+export const MODALITY_KEYS = Object.keys(MODALITIES);
+
+export const KIND_FILTERS = [
+  ["all", "Todas"],
+  ["curricular", "Curriculares"],
+  ["elective", "Electivas"],
+];
+export const matchesKind = (subject, kind) => kind === "all" || (kind === "elective" ? subject.elective : !subject.elective);
+
+export const REQUIREMENT_LABEL = { aprobada: "aprobada", cursada: "cursada" };
+
+// "19 · Física II" si tiene código; si no, solo el nombre.
+export const subjectLabel = (subject) => (subject.code ? `${subject.code} · ${subject.name}` : subject.name);
+
+// Datos del plan en una línea: código, modalidad, horas y si es electiva.
+export function planSummary(subject) {
+  const parts = [];
+  if (subject.code) parts.push(`Código ${subject.code}`);
+  if (subject.modality) parts.push(MODALITIES[subject.modality] ?? subject.modality);
+  if (subject.weekly_hours) parts.push(`${subject.weekly_hours} h semanales`);
+  parts.push(subject.elective ? `Electiva · ${subject.credits} cr` : "Curricular");
+  return parts.join(" · ");
+}
+
+// Links http/https de un texto libre, sin repetir. Se sacan los signos de puntuación del final.
+export function findLinks(text) {
+  const found = (text.match(/https?:\/\/[^\s<>"']+/g) ?? []).map((link) => link.replace(/[.,;:!?)\]]+$/, ""));
+  return [...new Set(found)];
+}
+
 export function summarize(subjects) {
   const byStatus = {};
   subjects.forEach((subject) => { byStatus[subject.status] = (byStatus[subject.status] ?? 0) + 1; });
   const approved = subjects.filter((subject) => statusInfo(subject.status).approved);
+  const curricular = subjects.filter((subject) => !subject.elective);
   const grades = approved.map((subject) => subject.grade).filter((grade) => grade !== null && grade !== undefined);
   return {
-    total: subjects.length,
-    approved: approved.length,
+    // Las electivas no cuentan en "materias aprobadas": suman créditos aparte.
+    curricularApproved: curricular.filter((subject) => statusInfo(subject.status).approved).length,
+    curricularTotal: curricular.length,
+    electiveCredits: approved.filter((subject) => subject.elective).reduce((sum, subject) => sum + (subject.credits ?? 0), 0),
+    // Promedio de las notas finales de todas las aprobadas (curriculares y electivas).
+    average: grades.length ? grades.reduce((sum, grade) => sum + grade, 0) / grades.length : null,
+    gradedCount: grades.length,
+    availableCount: subjects.filter((subject) => showsAvailability(subject.status) && subject.available).length,
     // Conteo por estado, en el orden de STATUS y solo con los que tienen al menos una materia.
     byStatus: STATUS_KEYS.filter((key) => byStatus[key]).map((key) => ({ key, count: byStatus[key] })),
-    average: grades.length ? grades.reduce((sum, grade) => sum + grade, 0) / grades.length : null,
   };
 }
