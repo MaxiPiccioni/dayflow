@@ -981,11 +981,34 @@ function Home({ user, logout, dark, setDark, wave, setWave }) {
     };
   }, [running]);
   const applyHoursState = (data) => { setHoursPeriod(data.period); setHourEntries(data.entries.map(fromApiEntry)); setHourPayments(data.payments.map(fromApiPayment)); setClosedPeriods(data.closed_periods.map(fromApiClosedPeriod)); };
-  useEffect(() => { Promise.all([api(`/dashboard?client_today=${todayIso()}`), api("/events"), api("/pomodoro"), api("/hours"), api("/pomodoro/history"), api("/categories"), api("/categories?scope=finance&kind=income"), api("/categories?scope=finance&kind=expense"), api(`/habits/overview?client_today=${todayIso()}`), api("/shopping-items"), api("/categories?scope=shopping")]).then(([dashboardData, eventsData, pomodoroData, hoursData, historyData, categoriesData, financeIncomeData, financeExpenseData, overviewData, shoppingItemsData, shoppingCategoriesData]) => { setTasks(dashboardData.tasks.map(fromApiTask)); setHabits(dashboardData.habits.map(fromApiHabit)); setTransactions(dashboardData.transactions.map(fromApiTransaction)); setSavings(dashboardData.savings.map(fromApiSaving)); setEvents(eventsData.map(fromApiEvent)); const loadedSettings = fromApiSettings(pomodoroData); setSettingsState(loadedSettings); setSeconds(loadedSettings.work * 60); applyHoursState(hoursData); setPomodoroHistory(historyData); setCategories(categoriesData); setFinanceIncomeCategories(financeIncomeData); setFinanceExpenseCategories(financeExpenseData); setHabitsOverview(overviewData.map(fromApiHabitOverview)); setShoppingItems(shoppingItemsData); setShoppingCategories(shoppingCategoriesData); setLoading(false); }).catch(() => logout()); }, [logout]);
+  const [loadError, setLoadError] = useState(null); // { message, retryIn } si falla la carga inicial
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // Carga inicial. Solo un 401 cierra la sesión: api.js borra el token y avisa a AuthGate. Un 429 con Retry-After
+  // de 10 s o menos se reintenta solo una vez; cualquier otro error (429 largo, 502, red) muestra "Reintentar".
+  // Los datos se aplican todos juntos al final, así nunca se mezclan datos viejos y nuevos.
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer;
+    let countdown;
+    const load = (autoRetried) => Promise.all([api(`/dashboard?client_today=${todayIso()}`), api("/events"), api("/pomodoro"), api("/hours"), api("/pomodoro/history"), api("/categories"), api("/categories?scope=finance&kind=income"), api("/categories?scope=finance&kind=expense"), api(`/habits/overview?client_today=${todayIso()}`), api("/shopping-items"), api("/categories?scope=shopping")]).then(([dashboardData, eventsData, pomodoroData, hoursData, historyData, categoriesData, financeIncomeData, financeExpenseData, overviewData, shoppingItemsData, shoppingCategoriesData]) => { if (cancelled) return; setTasks(dashboardData.tasks.map(fromApiTask)); setHabits(dashboardData.habits.map(fromApiHabit)); setTransactions(dashboardData.transactions.map(fromApiTransaction)); setSavings(dashboardData.savings.map(fromApiSaving)); setEvents(eventsData.map(fromApiEvent)); const loadedSettings = fromApiSettings(pomodoroData); setSettingsState(loadedSettings); setSeconds(loadedSettings.work * 60); applyHoursState(hoursData); setPomodoroHistory(historyData); setCategories(categoriesData); setFinanceIncomeCategories(financeIncomeData); setFinanceExpenseCategories(financeExpenseData); setHabitsOverview(overviewData.map(fromApiHabitOverview)); setShoppingItems(shoppingItemsData); setShoppingCategories(shoppingCategoriesData); setLoadError(null); setLoading(false); }).catch((err) => {
+      if (cancelled || err.status === 401) return;
+      if (err.status === 429 && !autoRetried && err.retryAfter !== null && err.retryAfter <= 10) {
+        setLoadError({ message: err.message, retryIn: err.retryAfter });
+        countdown = setInterval(() => setLoadError((current) => (current && current.retryIn > 1 ? { ...current, retryIn: current.retryIn - 1 } : current)), 1000);
+        retryTimer = setTimeout(() => { clearInterval(countdown); load(true); }, err.retryAfter * 1000);
+        return;
+      }
+      setLoadError({ message: err.message, retryIn: null });
+    });
+    load(false);
+    return () => { cancelled = true; clearTimeout(retryTimer); clearInterval(countdown); };
+  }, [loadAttempt]);
   const habitIdsKey = habits.map((habit) => habit.id).join(",");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the set of habit ids changes, not on every count update
   useEffect(() => { if (!habitIdsKey) return; Promise.all(habits.map((habit) => api(`/habits/${habit.id}/logs`).then((logs) => [habit.id, logs]))).then((entries) => { const map = {}; entries.forEach(([id, logs]) => { map[id] = {}; logs.forEach((log) => { map[id][log.log_date] = log.count; }); }); setHabitLogs((current) => ({ ...current, ...map })); }); }, [habitIdsKey]);
   const quote = useMemo(() => quotes[new Date().getDate() % quotes.length], []);
+  const retryLoad = () => { setLoadError(null); setLoadAttempt((attempt) => attempt + 1); };
+  if (loading && loadError) return <div className="grid min-h-screen place-items-center bg-[#f4f5ef] px-4 dark:bg-zinc-950"><div className="max-w-sm text-center"><p role="alert" className="text-sm text-zinc-600 dark:text-zinc-300">{loadError.message}</p>{loadError.retryIn !== null ? <p className="mt-2 text-sm text-zinc-400">Reintentando en {loadError.retryIn}s…</p> : <button type="button" onClick={retryLoad} className="mt-4 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white dark:bg-lime-400 dark:text-zinc-950">Reintentar</button>}</div></div>;
   if (loading) return <div className="grid min-h-screen place-items-center bg-[#f4f5ef] dark:bg-zinc-950"><p className="text-sm text-zinc-400">Cargando tu día…</p></div>;
   const hour = new Date().getHours(); const greeting = hour < 12 ? "Buen día" : hour < 19 ? "Buenas tardes" : "Buenas noches";
   const setSettings = (next) => { setSettingsState(next); api("/pomodoro", { method: "PATCH", body: JSON.stringify(toApiSettings(next)) }).catch(() => {}); };
