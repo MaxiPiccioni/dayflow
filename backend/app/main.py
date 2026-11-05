@@ -73,6 +73,8 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",")],
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
+    # Retry-After no es un header expuesto por defecto: sin esto el frontend no puede leerlo en un 429.
+    expose_headers=["Retry-After"],
 )
 
 

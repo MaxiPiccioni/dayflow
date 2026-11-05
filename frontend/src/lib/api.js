@@ -5,11 +5,13 @@ export const TOKEN_KEY = "dayflow_token";
 export const AUTH_EXPIRED_EVENT = "dayflow-auth-expired";
 
 export class ApiError extends Error {
-  constructor(message, { status = 0, network = false } = {}) {
+  constructor(message, { status = 0, network = false, retryAfter = null } = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.network = network;
+    // Segundos que pide esperar el servidor (header Retry-After de un 429), o null.
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -58,7 +60,8 @@ export async function api(path, options = {}) {
       localStorage.removeItem(TOKEN_KEY);
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     }
-    throw new ApiError(await readErrorMessage(response), { status: response.status });
+    const retryAfter = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
+    throw new ApiError(await readErrorMessage(response), { status: response.status, retryAfter: Number.isFinite(retryAfter) ? retryAfter : null });
   }
   if (response.status === 204) return null;
   return response.json();

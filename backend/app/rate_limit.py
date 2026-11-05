@@ -80,8 +80,11 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-# Límite general por IP.
-general_limiter = SlidingWindowLimiter(window_seconds=60, max_events=120)
+# Límite general por IP. Cada carga de la app hace unos 13 pedidos, así que con 120 por
+# minuto bastaban unas 9 recargas para bloquear a un usuario legítimo. 300 deja margen
+# para recargas y uso normal y sigue frenando abusos. En la Fase 5 se reduce la cantidad
+# de pedidos de la carga inicial.
+general_limiter = SlidingWindowLimiter(window_seconds=60, max_events=300)
 # Límite de pedidos a /auth/* por IP (login y registro).
 auth_limiter = SlidingWindowLimiter(window_seconds=300, max_events=10)
 # Intentos de login fallidos por cuenta, sin importar desde qué IP vengan.
@@ -94,7 +97,7 @@ def rate_limit(request: Request) -> None:
     key = client_ip(request)
     wait = general_limiter.retry_after(key)
     if wait:
-        raise too_many_requests("Too many requests", wait)
+        raise too_many_requests("Demasiados pedidos. Probá de nuevo en unos segundos.", wait)
     general_limiter.hit(key)
 
 
