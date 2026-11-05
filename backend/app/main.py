@@ -60,13 +60,16 @@ from .schemas import (
 )
 from .security import create_access_token, get_user_id, hash_password, verify_password
 
-app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)])
+# En producción no se expone la documentación interactiva ni el esquema OpenAPI.
+docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.is_production else {}
+app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)], **docs_kwargs)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+# La autenticación va por header Authorization (Bearer), no por cookies, así que
+# no hace falta allow_credentials.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",")],
-    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -78,6 +81,8 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
