@@ -224,8 +224,8 @@ def test_close_freezes_totals_paid_and_balance(client, user):
     assert closed["balance"] == 11000
     assert hours_state(client, user)["period"]["closed"] is True
 
-    # Las jornadas cargadas después no cambian los totales congelados.
-    put_hour_entry(client, user, "2026-11-20", hours=10)
+    # Con el período cerrado no se pueden cargar jornadas, así que los totales quedan congelados.
+    assert client.put("/api/hours/entries", json={"entry_date": "2026-11-20", "hours": 10}, headers=user).status_code == 400
     assert hours_state(client, user)["closed_periods"][0]["total_hours"] == 12
 
 
@@ -340,3 +340,72 @@ def test_open_period_paid_and_balance_are_live(client, user):
     state = add_hour_payment(client, user, 6000)
     assert (state["period"]["closed"], state["period"]["paid"], state["period"]["balance"]) == (False, 6000, 10000)
     assert hours_state(client, user, "2026-12-10")["period"]["paid"] == 0
+
+
+# --- Jornadas de un período cerrado ---
+
+CLOSED_DETAIL = "El período está cerrado. Reabrilo para modificar las jornadas"
+
+
+def entries_in_db(db) -> list[tuple]:
+    db.expire_all()
+    return sorted((entry.entry_date.isoformat(), entry.hours) for entry in db.query(HourEntry).all())
+
+
+def test_entries_of_closed_period_cannot_be_created_edited_or_deleted(client, db, user):
+    existing = put_hour_entry(client, user, "2026-11-02", hours=8)
+    close_period(client, user)
+    before = entries_in_db(db)
+
+    for body in ({"entry_date": "2026-11-03", "hours": 4}, {"entry_date": "2026-11-02", "hours": 1}):
+        response = client.put("/api/hours/entries", json=body, headers=user)
+        assert response.status_code == 400
+        assert response.json()["detail"] == CLOSED_DETAIL
+    response = client.delete(f"/api/hours/entries/{existing['id']}", headers=user)
+    assert response.status_code == 400
+    assert response.json()["detail"] == CLOSED_DETAIL
+    assert entries_in_db(db) == before
+
+
+def test_entries_can_be_changed_again_after_reopening(client, db, user):
+    existing = put_hour_entry(client, user, "2026-11-02", hours=8)
+    period_id = hours_state(client, user)["period"]["id"]
+    close_period(client, user)
+    client.post(f"/api/hours/periods/{period_id}/reopen", headers=user)
+
+    put_hour_entry(client, user, "2026-11-02", hours=6)
+    put_hour_entry(client, user, "2026-11-03", hours=4)
+    assert client.delete(f"/api/hours/entries/{existing['id']}", headers=user).status_code == 204
+    assert entries_in_db(db) == [("2026-11-03", 4.0)]
+
+
+def test_entries_of_open_period_next_to_closed_one_work(client, db, user):
+    close_period(client, user, "2026-10-15")
+    created = put_hour_entry(client, user, "2026-11-02", hours=8)
+    put_hour_entry(client, user, "2026-11-02", hours=5)
+    assert client.delete(f"/api/hours/entries/{created['id']}", headers=user).status_code == 204
+    assert client.put("/api/hours/entries", json={"entry_date": "2026-10-31"}, headers=user).status_code == 400
+
+
+def test_history_check_runs_before_closed_check(client, db, user):
+    add_legacy_period(db, user, client, "2026-08-11", "2026-09-10", closed=True)
+    response = client.put("/api/hours/entries", json={"entry_date": "2026-09-01"}, headers=user)
+    assert response.json()["detail"] == HISTORY_DETAIL
+
+
+def test_closed_legacy_period_crossing_cutover_does_not_block_new_month(client, db, user):
+    # Igual que _resolve_period: un período viejo "11 al 10" que cruza el corte no gobierna fechas nuevas.
+    add_legacy_period(db, user, client, "2026-10-11", "2026-11-10", closed=True)
+    created = put_hour_entry(client, user, "2026-11-05", hours=3)
+    assert client.delete(f"/api/hours/entries/{created['id']}", headers=user).status_code == 204
+
+
+def test_entry_inside_closed_legacy_period_cannot_be_deleted(client, db, user):
+    user_id = client.get("/api/auth/me", headers=user).json()["id"]
+    add_legacy_period(db, user, client, "2026-08-11", "2026-09-10", closed=True)
+    entry = HourEntry(user_id=user_id, entry_date=date(2026, 9, 1), hours=2)
+    db.add(entry)
+    db.commit()
+    response = client.delete(f"/api/hours/entries/{entry.id}", headers=user)
+    assert response.status_code == 400
+    assert response.json()["detail"] == CLOSED_DETAIL

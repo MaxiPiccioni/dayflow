@@ -709,6 +709,15 @@ def _ensure_not_history(day: date_type) -> None:
         raise HTTPException(status_code=400, detail="Ese período es historia cerrada")
 
 
+def _ensure_entry_period_open(db: Session, user: User, day: date_type) -> None:
+    # Un período cerrado congela horas y sueldo esperado: sus jornadas no se tocan hasta reabrirlo.
+    # Igual que _resolve_period: desde el corte la fecha la gobierna su mes calendario, no un
+    # período viejo "11 al 10" que lo cruce (por ejemplo, 11/10 al 10/11).
+    match = (PayPeriod.start == _period_start_for(day)) if day >= CALENDAR_PERIODS_FROM else ((PayPeriod.start <= day) & (PayPeriod.end >= day))
+    if db.scalar(select(PayPeriod.id).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True), match).limit(1)):
+        raise HTTPException(status_code=400, detail="El período está cerrado. Reabrilo para modificar las jornadas")
+
+
 def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
     start = _period_start_for(reference)
     if reference >= CALENDAR_PERIODS_FROM:
@@ -776,6 +785,7 @@ def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), 
 @app.put("/api/hours/entries", response_model=HourEntryOut)
 def upsert_hour_entry(payload: HourEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HourEntry:
     _ensure_not_history(payload.entry_date)
+    _ensure_entry_period_open(db, user, payload.entry_date)
     entry = db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
     if entry:
         for field, value in payload.model_dump().items():
@@ -793,6 +803,7 @@ def delete_hour_entry(entry_id: int, user: User = Depends(current_user), db: Ses
     entry = db.scalar(select(HourEntry).where(HourEntry.id == entry_id, HourEntry.user_id == user.id))
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    _ensure_entry_period_open(db, user, entry.entry_date)
     db.delete(entry)
     db.commit()
 
