@@ -97,7 +97,7 @@ def rate_limit(request: Request) -> None:
     key = client_ip(request)
     wait = general_limiter.retry_after(key)
     if wait:
-        raise too_many_requests("Too many requests", wait)
+        raise too_many_requests("Demasiados pedidos. Probá de nuevo en unos segundos.", wait)
     general_limiter.hit(key)
 
 

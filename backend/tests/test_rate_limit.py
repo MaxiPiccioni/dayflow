@@ -102,6 +102,7 @@ def test_general_limit_blocks_after_max_with_retry_after_exposed_to_cors(client)
         assert client.get("/api/ping", headers={"Origin": origin}).status_code == 200
     blocked = client.get("/api/ping", headers={"Origin": origin})
     assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "Demasiados pedidos. Probá de nuevo en unos segundos."
     assert int(blocked.headers["Retry-After"]) > 0
     # El frontend corre en otro origen: el navegador solo le deja leer Retry-After si se expone.
     assert "retry-after" in blocked.headers["access-control-expose-headers"].lower()
