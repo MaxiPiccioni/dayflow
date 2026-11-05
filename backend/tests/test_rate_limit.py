@@ -85,3 +85,23 @@ def test_auth_endpoints_are_limited_per_ip(client):
     for index in range(rate_limit.auth_limiter.max_events + 1):
         statuses.append(register(client, email=f"user{index}@example.com").status_code)
     assert statuses[-1] == 429
+
+
+def test_general_limit_is_300_per_minute():
+    assert (rate_limit.general_limiter.window_seconds, rate_limit.general_limiter.max_events) == (60, 300)
+
+
+def test_auth_and_login_failure_limits_are_unchanged():
+    assert (rate_limit.auth_limiter.window_seconds, rate_limit.auth_limiter.max_events) == (300, 10)
+    assert (rate_limit.login_failure_limiter.window_seconds, rate_limit.login_failure_limiter.max_events) == (900, 5)
+
+
+def test_general_limit_blocks_after_max_with_retry_after_exposed_to_cors(client):
+    origin = settings.cors_origins.split(",")[0].strip()
+    for _ in range(rate_limit.general_limiter.max_events):
+        assert client.get("/api/ping", headers={"Origin": origin}).status_code == 200
+    blocked = client.get("/api/ping", headers={"Origin": origin})
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    # El frontend corre en otro origen: el navegador solo le deja leer Retry-After si se expone.
+    assert "retry-after" in blocked.headers["access-control-expose-headers"].lower()
