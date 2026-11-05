@@ -74,10 +74,31 @@ def test_invalid_category_payload(client, user, payload):
     assert client.post("/api/categories", json=payload, headers=user).status_code == 422
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: el chequeo de duplicados usa ILIKE sin escapar, así que % y _ funcionan como comodines")
-def test_name_with_like_wildcards_is_not_a_false_duplicate(client, user):
+@pytest.mark.parametrize("name", ["%", "_", "Tr_bajo", "F%"])
+def test_name_with_like_wildcards_is_not_a_false_duplicate(client, user, name):
     names(client, user)
-    assert client.post("/api/categories", json={"name": "%"}, headers=user).status_code == 201
+    assert client.post("/api/categories", json={"name": name}, headers=user).status_code == 201
+    existing = find(client, user, "Rutina")
+    assert client.patch(f"/api/categories/{existing['id']}", json={"name": name + "x"}, headers=user).status_code == 200
+
+
+@pytest.mark.parametrize("name", ["alimentación", "ALIMENTACIÓN", "  Alimentación  "])
+def test_duplicate_check_folds_non_ascii_case_and_spaces(client, user, name):
+    query = "?scope=finance&kind=expense"
+    names(client, user, query)
+    response = client.post("/api/categories", json={"name": name, "scope": "finance", "kind": "expense"}, headers=user)
+    assert response.status_code == 409
+
+
+def test_rename_to_own_name_with_other_case_and_accents_is_allowed(client, user):
+    query = "?scope=finance&kind=expense"
+    names(client, user, query)
+    category = find(client, user, "Alimentación", query)
+    response = client.patch(f"/api/categories/{category['id']}", json={"name": "ALIMENTACIÓN"}, headers=user)
+    assert response.status_code == 200
+    assert response.json()["name"] == "ALIMENTACIÓN"
+    transport = find(client, user, "Transporte", query)
+    assert client.patch(f"/api/categories/{transport['id']}", json={"name": "alimentación"}, headers=user).status_code == 409
 
 
 def test_rename_to_existing_name_is_rejected(client, user):

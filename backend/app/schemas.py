@@ -264,6 +264,9 @@ class PayPeriodOut(BaseModel):
     end: date
     rate: float
     closed: bool
+    # Calculados en vivo desde los pagos (ver _build_hours_state).
+    paid: float = 0
+    balance: float = 0
 
 
 class ClosedPeriodOut(BaseModel):

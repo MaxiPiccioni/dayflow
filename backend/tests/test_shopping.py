@@ -24,6 +24,5 @@ def test_update_and_delete_item(client, user):
     assert client.delete(f"/api/shopping-items/{item['id']}", headers=user).status_code == 404
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: create_shopping_item no pasa buy_quantity al modelo y siempre guarda 1")
 def test_create_keeps_buy_quantity(client, user):
     assert create_shopping_item(client, user, buy_quantity=4)["buy_quantity"] == 4

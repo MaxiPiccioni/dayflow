@@ -31,6 +31,7 @@ from .schemas import (
     HabitUpdate,
     HourEntryCreate,
     HourEntryOut,
+    HourPaymentCreate,
     HourPaymentOut,
     HourPaymentRequest,
     HoursStateOut,
@@ -144,7 +145,9 @@ def _habit_logs_by_date(db: Session, habit_id: int) -> dict[date_type, int]:
 
 
 def _habit_out_from_logs(habit: Habit, by_date: dict[date_type, int], today: date_type) -> HabitOut:
-    today_count = by_date.get(today, 0)
+    # Se recorta al leer: si se baja el target, el dato guardado se conserva por si vuelve a subir.
+    # La racha y el overview comparan `>= target`, que da lo mismo con el valor recortado o sin recortar.
+    today_count = min(by_date.get(today, 0), habit.target)
     progress = round(today_count / habit.target * 100) if habit.target else 0
     streak = 0
     if today_count >= habit.target:
@@ -297,6 +300,13 @@ def _category_query(user_id: int, scope: str, kind: str | None):
     return query.where(Category.kind.is_(None)) if kind is None else query.where(Category.kind == kind)
 
 
+def _category_name_taken(db: Session, user_id: int, scope: str, kind: str | None, name: str, exclude_id: int | None = None) -> bool:
+    # Se compara en Python: ILIKE trata % y _ como comodines, y SQLite solo pasa a
+    # minúsculas caracteres ASCII ("Ó" != "ó"), a diferencia de Postgres.
+    wanted = name.strip().casefold()
+    return any(category.name.strip().casefold() == wanted for category in db.scalars(_category_query(user_id, scope, kind)) if category.id != exclude_id)
+
+
 @app.get("/api/categories", response_model=list[CategoryOut])
 def list_categories(scope: str = "agenda", kind: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Category]:
     categories = db.scalars(_category_query(user.id, scope, kind).order_by(Category.name)).all()
@@ -312,8 +322,7 @@ def list_categories(scope: str = "agenda", kind: str | None = None, user: User =
 @app.post("/api/categories", response_model=CategoryOut, status_code=status.HTTP_201_CREATED)
 def create_category(payload: CategoryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Category:
     name = payload.name.strip()
-    exists = db.scalar(_category_query(user.id, payload.scope, payload.kind).where(Category.name.ilike(name)))
-    if exists:
+    if _category_name_taken(db, user.id, payload.scope, payload.kind, name):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
     category = Category(user_id=user.id, name=name, scope=payload.scope, kind=payload.kind)
     db.add(category)
@@ -328,8 +337,7 @@ def rename_category(category_id: int, payload: CategoryUpdate, user: User = Depe
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     name = payload.name.strip()
-    exists = db.scalar(_category_query(user.id, category.scope, category.kind).where(Category.name.ilike(name), Category.id != category.id))
-    if exists:
+    if _category_name_taken(db, user.id, category.scope, category.kind, name, exclude_id=category.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
     old_name = category.name
     category.name = name
@@ -399,11 +407,12 @@ def update_habit(habit_id: int, payload: HabitUpdate, client_today: date_type | 
 
 
 @app.get("/api/habits/{habit_id}/logs", response_model=list[HabitLogOut])
-def list_habit_logs(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitLog]:
+def list_habit_logs(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitLogOut]:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    return db.scalars(select(HabitLog).where(HabitLog.habit_id == habit_id).order_by(HabitLog.log_date)).all()
+    logs = db.scalars(select(HabitLog).where(HabitLog.habit_id == habit_id).order_by(HabitLog.log_date)).all()
+    return [HabitLogOut(log_date=log.log_date, count=min(log.count, habit.target)) for log in logs]
 
 
 @app.put("/api/habits/{habit_id}/logs/{log_date}", response_model=HabitOut)
@@ -461,7 +470,7 @@ def list_shopping_items(user: User = Depends(current_user), db: Session = Depend
 
 @app.post("/api/shopping-items", response_model=ShoppingItemOut, status_code=status.HTTP_201_CREATED)
 def create_shopping_item(payload: ShoppingItemCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> ShoppingItem:
-    item = ShoppingItem(user_id=user.id, name=payload.name.strip(), category=payload.category, stock=payload.stock, force_list=payload.force_list)
+    item = ShoppingItem(user_id=user.id, **{**payload.model_dump(), "name": payload.name.strip()})
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -690,9 +699,23 @@ def _entry_value(entry: HourEntry, rate: float) -> float:
     return _entry_duration(entry) * rate * (2 if entry.extra else 1)
 
 
-# Desde esta fecha los períodos son siempre meses calendario. Los períodos
-# viejos "11 al 10" solo se buscan por rango para fechas anteriores.
+# Desde esta fecha los períodos son siempre meses calendario. Antes es historia
+# cerrada: los períodos viejos "11 al 10" solo se buscan por rango y no se crean nuevos.
 CALENDAR_PERIODS_FROM = date_type(2026, 10, 1)
+
+
+def _ensure_not_history(day: date_type) -> None:
+    if day < CALENDAR_PERIODS_FROM:
+        raise HTTPException(status_code=400, detail="Ese período es historia cerrada")
+
+
+def _ensure_entry_period_open(db: Session, user: User, day: date_type) -> None:
+    # Un período cerrado congela horas y sueldo esperado: sus jornadas no se tocan hasta reabrirlo.
+    # Igual que _resolve_period: desde el corte la fecha la gobierna su mes calendario, no un
+    # período viejo "11 al 10" que lo cruce (por ejemplo, 11/10 al 10/11).
+    match = (PayPeriod.start == _period_start_for(day)) if day >= CALENDAR_PERIODS_FROM else ((PayPeriod.start <= day) & (PayPeriod.end >= day))
+    if db.scalar(select(PayPeriod.id).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True), match).limit(1)):
+        raise HTTPException(status_code=400, detail="El período está cerrado. Reabrilo para modificar las jornadas")
 
 
 def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
@@ -704,6 +727,8 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
     existing = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, match).order_by(PayPeriod.start.desc()))
     if existing:
         return existing
+    if reference < CALENDAR_PERIODS_FROM:
+        raise HTTPException(status_code=404, detail="No hay registros para esa fecha")
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
     rate = last.rate if last else 0.0
     period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
@@ -714,12 +739,11 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
 
 
 def _close_period(db: Session, period: PayPeriod, user: User) -> None:
+    # Al cerrar se congelan las horas y lo esperado. paid y balance no: los pagos
+    # llegan a mes vencido y se calculan en vivo en _build_hours_state.
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date >= period.start, HourEntry.entry_date <= period.end)).all()
-    payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id)).all()
     period.total_hours = sum(_entry_duration(entry) for entry in entries)
     period.expected = sum(_entry_value(entry, period.rate) for entry in entries)
-    period.paid = sum(payment.amount for payment in payments)
-    period.balance = period.expected - period.paid
     period.closed = True
 
 
@@ -728,11 +752,18 @@ def _build_hours_state(db: Session, user: User, reference: date_type, period: Pa
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id).order_by(HourEntry.entry_date)).all()
     payments = db.scalars(select(HourPayment).where(HourPayment.period_id == period.id).order_by(HourPayment.payment_date)).all()
     closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
+    paid_by_period = dict(db.execute(select(HourPayment.period_id, func.sum(HourPayment.amount)).where(HourPayment.user_id == user.id).group_by(HourPayment.period_id)).all())
+    # Un período abierto todavía no congeló expected: se calcula con sus jornadas.
+    expected = period.expected if period.closed else sum(_entry_value(entry, period.rate) for entry in entries if period.start <= entry.entry_date <= period.end)
+    paid = paid_by_period.get(period.id, 0.0)
     return HoursStateOut(
-        period=PayPeriodOut.model_validate(period),
+        period=PayPeriodOut.model_validate(period).model_copy(update={"paid": paid, "balance": expected - paid}),
         entries=[HourEntryOut.model_validate(entry) for entry in entries],
         payments=[HourPaymentOut.model_validate(payment) for payment in payments],
-        closed_periods=[ClosedPeriodOut.model_validate(item) for item in closed_periods],
+        closed_periods=[
+            ClosedPeriodOut.model_validate(item).model_copy(update={"paid": paid_by_period.get(item.id, 0.0), "balance": item.expected - paid_by_period.get(item.id, 0.0)})
+            for item in closed_periods
+        ],
     )
 
 
@@ -744,6 +775,7 @@ def get_hours(reference_date: date_type | None = None, user: User = Depends(curr
 @app.patch("/api/hours/period", response_model=HoursStateOut)
 def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
     reference = payload.reference_date or date_type.today()
+    _ensure_not_history(reference)
     period = _resolve_period(db, user, reference)
     period.rate = payload.rate
     db.commit()
@@ -752,6 +784,8 @@ def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), 
 
 @app.put("/api/hours/entries", response_model=HourEntryOut)
 def upsert_hour_entry(payload: HourEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HourEntry:
+    _ensure_not_history(payload.entry_date)
+    _ensure_entry_period_open(db, user, payload.entry_date)
     entry = db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
     if entry:
         for field, value in payload.model_dump().items():
@@ -769,6 +803,7 @@ def delete_hour_entry(entry_id: int, user: User = Depends(current_user), db: Ses
     entry = db.scalar(select(HourEntry).where(HourEntry.id == entry_id, HourEntry.user_id == user.id))
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    _ensure_entry_period_open(db, user, entry.entry_date)
     db.delete(entry)
     db.commit()
 
@@ -783,6 +818,16 @@ def create_payment(payload: HourPaymentRequest, user: User = Depends(current_use
     return _build_hours_state(db, user, reference)
 
 
+@app.post("/api/hours/periods/{period_id}/payments", response_model=HoursStateOut, status_code=status.HTTP_201_CREATED)
+def create_period_payment(period_id: int, payload: HourPaymentCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
+    period = db.scalar(select(PayPeriod).where(PayPeriod.id == period_id, PayPeriod.user_id == user.id))
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+    db.add(HourPayment(user_id=user.id, period_id=period.id, **payload.model_dump()))
+    db.commit()
+    return _build_hours_state(db, user, period.start, period)
+
+
 @app.delete("/api/hours/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_payment(payment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
     payment = db.scalar(select(HourPayment).where(HourPayment.id == payment_id, HourPayment.user_id == user.id))
@@ -795,6 +840,7 @@ def delete_payment(payment_id: int, user: User = Depends(current_user), db: Sess
 @app.post("/api/hours/close", response_model=HoursStateOut)
 def close_period(payload: CloseRequest, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
     reference = payload.reference_date or date_type.today()
+    _ensure_not_history(reference)
     period = _resolve_period(db, user, reference)
     if period.closed:
         raise HTTPException(status_code=400, detail="Period already closed")
