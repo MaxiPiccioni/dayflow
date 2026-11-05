@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     jwt_secret: str = DEFAULT_JWT_SECRET
     cors_origins: str = "http://localhost:3000"
     access_token_minutes: int = 60 * 24
+    # Cantidad de proxies de confianza delante de la app (Render = 1). Se usa para
+    # leer la IP real del cliente desde X-Forwarded-For. 0 = sin proxy (local).
+    trusted_proxy_hops: int = 0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

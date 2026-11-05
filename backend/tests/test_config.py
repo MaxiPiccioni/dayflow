@@ -6,6 +6,14 @@ from app.config import DEFAULT_JWT_SECRET, Settings
 STRONG_SECRET = "x" * 48
 
 
+@pytest.fixture(autouse=True)
+def isolated_env(monkeypatch):
+    # El conftest define estas variables para la app de tests; acá se quitan para
+    # que cada caso parta de los valores por defecto de Settings.
+    for name in ("ENVIRONMENT", "JWT_SECRET", "TRUSTED_PROXY_HOPS"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def make_settings(**overrides) -> Settings:
     # _env_file=None evita que un .env local pise los valores del test.
     return Settings(_env_file=None, **overrides)

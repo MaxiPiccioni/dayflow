@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
-from .rate_limit import auth_rate_limit, rate_limit
+from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
 from .schemas import (
     CategoryCreate,
     CategoryOut,
@@ -118,9 +118,13 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
 
 @app.post("/api/auth/login", response_model=Token, dependencies=[Depends(auth_rate_limit)])
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    email = payload.email.lower()
+    ensure_login_allowed(email)
+    user = db.scalar(select(User).where(User.email == email))
     if not user or not verify_password(payload.password, user.password_hash):
+        register_login_failure(email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    clear_login_failures(email)
     return Token(access_token=create_access_token(user.id))
 
 
