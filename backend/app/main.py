@@ -144,7 +144,9 @@ def _habit_logs_by_date(db: Session, habit_id: int) -> dict[date_type, int]:
 
 
 def _habit_out_from_logs(habit: Habit, by_date: dict[date_type, int], today: date_type) -> HabitOut:
-    today_count = by_date.get(today, 0)
+    # Se recorta al leer: si se baja el target, el dato guardado se conserva por si vuelve a subir.
+    # La racha y el overview comparan `>= target`, que da lo mismo con el valor recortado o sin recortar.
+    today_count = min(by_date.get(today, 0), habit.target)
     progress = round(today_count / habit.target * 100) if habit.target else 0
     streak = 0
     if today_count >= habit.target:
@@ -404,11 +406,12 @@ def update_habit(habit_id: int, payload: HabitUpdate, client_today: date_type | 
 
 
 @app.get("/api/habits/{habit_id}/logs", response_model=list[HabitLogOut])
-def list_habit_logs(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitLog]:
+def list_habit_logs(habit_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[HabitLogOut]:
     habit = db.scalar(select(Habit).where(Habit.id == habit_id, Habit.user_id == user.id))
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    return db.scalars(select(HabitLog).where(HabitLog.habit_id == habit_id).order_by(HabitLog.log_date)).all()
+    logs = db.scalars(select(HabitLog).where(HabitLog.habit_id == habit_id).order_by(HabitLog.log_date)).all()
+    return [HabitLogOut(log_date=log.log_date, count=min(log.count, habit.target)) for log in logs]
 
 
 @app.put("/api/habits/{habit_id}/logs/{log_date}", response_model=HabitOut)

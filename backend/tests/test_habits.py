@@ -90,12 +90,21 @@ def test_update_habit_fields(client, db, user):
     assert {key: response.json()[key] for key in ("name", "target", "unit")} == {"name": "Correr", "target": 3, "unit": "km"}
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: bajar el target no recorta los registros existentes; count queda mayor que target y progress supera 100")
-def test_lowering_target_keeps_progress_within_100(client, db, user):
+def test_lowering_target_clips_on_read_and_keeps_stored_count(client, db, user):
     habit = create_habit(client, db, user, target=5)
+    set_habit_log(client, user, habit["id"], "2026-11-03", 5)
     set_habit_log(client, user, habit["id"], TODAY, 5)
-    response = client.patch(f"/api/habits/{habit['id']}?client_today={TODAY}", json={"target": 2}, headers=user)
-    assert response.json()["progress"] <= 100
+
+    lowered = client.patch(f"/api/habits/{habit['id']}?client_today={TODAY}", json={"target": 2}, headers=user).json()
+    assert (lowered["count"], lowered["progress"], lowered["streak"]) == (2, 100, 2)
+    assert [log["count"] for log in client.get(f"/api/habits/{habit['id']}/logs", headers=user).json()] == [2, 2]
+    overview = client.get(f"/api/habits/overview?days=2&client_today={TODAY}", headers=user).json()
+    assert [(day["completed"], day["total"]) for day in overview] == [(1, 1), (1, 1)]
+
+    # El dato guardado no se tocó: al subir el target vuelve a verse 5.
+    raised = client.patch(f"/api/habits/{habit['id']}?client_today={TODAY}", json={"target": 10}, headers=user).json()
+    assert (raised["count"], raised["progress"], raised["streak"]) == (5, 50, 0)
+    assert [log["count"] for log in client.get(f"/api/habits/{habit['id']}/logs", headers=user).json()] == [5, 5]
 
 
 def test_delete_habit_removes_it_and_its_logs(client, db, user):
