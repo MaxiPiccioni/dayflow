@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 200
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Migraciones generadas por Alembic: no se reordenan imports ni se tocan espacios
+# de archivos ya aplicados en producción.
+"alembic/**" = ["I001", "W291"]
+# conftest.py define DATABASE_URL y JWT_SECRET antes de importar la app a propósito.
+"tests/conftest.py" = ["E402"]
