@@ -319,11 +319,22 @@ SubjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 FolderName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
 SubjectLevel = Annotated[int, Field(ge=1, le=8)]
 SubjectGrade = Annotated[Decimal, Field(ge=1, le=10, max_digits=4, decimal_places=2)]
+SubjectCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10)]
+SubjectModality = Literal["A", "1C", "2C", "1C-2C", "2C-1C"]
+SubjectCredits = Annotated[int, Field(ge=1, le=20)]
+SubjectWeeklyHours = Annotated[int, Field(ge=1, le=20)]
+RequirementKind = Literal["cursada", "aprobada"]
+ELECTIVE_NEEDS_CREDITS = "Las electivas tienen que tener créditos"
+NOTES_MAX_LENGTH = 5000
 
 
 def grade_requires_approval_error() -> PydanticCustomError:
     # Error propio para que el 422 traiga el mensaje tal cual, sin el prefijo "Value error, ".
     return PydanticCustomError("grade_requires_approval", GRADE_REQUIRES_APPROVAL)
+
+
+def elective_needs_credits_error() -> PydanticCustomError:
+    return PydanticCustomError("elective_needs_credits", ELECTIVE_NEEDS_CREDITS)
 
 
 class SubjectCreate(BaseModel):
@@ -334,11 +345,27 @@ class SubjectCreate(BaseModel):
     icon: str = Field(default="book", min_length=1, max_length=40)
     color: str = Field(default="lime", min_length=1, max_length=20)
     position: int | None = Field(default=None, ge=0)
+    code: SubjectCode | None = None
+    elective: bool = False
+    credits: SubjectCredits | None = None
+    modality: SubjectModality | None = None
+    weekly_hours: SubjectWeeklyHours | None = None
+    # Correlativas para cursar esta materia (ids de materias del usuario).
+    requires_aprobada: list[int] = []
+    requires_cursada: list[int] = []
 
     @model_validator(mode="after")
     def grade_only_when_approved(self) -> "SubjectCreate":
         if self.grade is not None and self.status not in GRADED_SUBJECT_STATUSES:
             raise grade_requires_approval_error()
+        return self
+
+    @model_validator(mode="after")
+    def credits_only_for_electives(self) -> "SubjectCreate":
+        if self.elective and self.credits is None:
+            raise elective_needs_credits_error()
+        if not self.elective:
+            self.credits = None
         return self
 
 
@@ -349,11 +376,20 @@ class SubjectUpdate(BaseModel):
     grade: SubjectGrade | None = None
     icon: str | None = Field(default=None, min_length=1, max_length=40)
     color: str | None = Field(default=None, min_length=1, max_length=20)
+    code: SubjectCode | None = None
+    elective: bool | None = None
+    credits: SubjectCredits | None = None
+    modality: SubjectModality | None = None
+    weekly_hours: SubjectWeeklyHours | None = None
+    # Si viene una lista, reemplaza las correlativas de ese tipo; si no viene, no se tocan.
+    requires_aprobada: list[int] | None = None
+    requires_cursada: list[int] | None = None
 
     @model_validator(mode="after")
     def no_null_for_required_fields(self) -> "SubjectUpdate":
-        # Solo grade se puede mandar en null (para borrar la nota); el resto se omite si no cambia.
-        for field in ("name", "level", "status", "icon", "color"):
+        # grade, code, credits, modality y weekly_hours se pueden mandar en null para borrarlos;
+        # el resto se omite si no cambia.
+        for field in ("name", "level", "status", "icon", "color", "elective", "requires_aprobada", "requires_cursada"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise PydanticCustomError("not_nullable", "{field} no puede ser null", {"field": field})
         return self
@@ -364,6 +400,12 @@ class SubjectFolderOut(BaseModel):
     id: int
     name: str
     position: int
+
+
+class MissingRequirement(BaseModel):
+    id: int
+    name: str
+    kind: RequirementKind
 
 
 class SubjectOut(BaseModel):
@@ -378,6 +420,19 @@ class SubjectOut(BaseModel):
     position: int
     created_at: datetime
     folders: list[SubjectFolderOut]
+    code: str | None
+    elective: bool
+    credits: int | None
+    modality: SubjectModality | None
+    weekly_hours: int | None
+    notes: str
+    requires_aprobada: list[int]
+    requires_cursada: list[int]
+    # Materias que tienen a esta como correlativa.
+    required_by: list[int]
+    # Disponibilidad para cursar, calculada en el servidor: available es true si no falta nada.
+    available: bool
+    missing: list[MissingRequirement]
 
 
 class SubjectOrder(BaseModel):
@@ -391,3 +446,4 @@ class SubjectFolderCreate(BaseModel):
 
 class SubjectFolderOrder(BaseModel):
     ids: list[int]
+
