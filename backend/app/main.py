@@ -297,6 +297,13 @@ def _category_query(user_id: int, scope: str, kind: str | None):
     return query.where(Category.kind.is_(None)) if kind is None else query.where(Category.kind == kind)
 
 
+def _category_name_taken(db: Session, user_id: int, scope: str, kind: str | None, name: str, exclude_id: int | None = None) -> bool:
+    # Se compara en Python: ILIKE trata % y _ como comodines, y SQLite solo pasa a
+    # minúsculas caracteres ASCII ("Ó" != "ó"), a diferencia de Postgres.
+    wanted = name.strip().casefold()
+    return any(category.name.strip().casefold() == wanted for category in db.scalars(_category_query(user_id, scope, kind)) if category.id != exclude_id)
+
+
 @app.get("/api/categories", response_model=list[CategoryOut])
 def list_categories(scope: str = "agenda", kind: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Category]:
     categories = db.scalars(_category_query(user.id, scope, kind).order_by(Category.name)).all()
@@ -312,8 +319,7 @@ def list_categories(scope: str = "agenda", kind: str | None = None, user: User =
 @app.post("/api/categories", response_model=CategoryOut, status_code=status.HTTP_201_CREATED)
 def create_category(payload: CategoryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Category:
     name = payload.name.strip()
-    exists = db.scalar(_category_query(user.id, payload.scope, payload.kind).where(Category.name.ilike(name)))
-    if exists:
+    if _category_name_taken(db, user.id, payload.scope, payload.kind, name):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
     category = Category(user_id=user.id, name=name, scope=payload.scope, kind=payload.kind)
     db.add(category)
@@ -328,8 +334,7 @@ def rename_category(category_id: int, payload: CategoryUpdate, user: User = Depe
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     name = payload.name.strip()
-    exists = db.scalar(_category_query(user.id, category.scope, category.kind).where(Category.name.ilike(name), Category.id != category.id))
-    if exists:
+    if _category_name_taken(db, user.id, category.scope, category.kind, name, exclude_id=category.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
     old_name = category.name
     category.name = name
