@@ -10,16 +10,20 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..deps import current_user
-from ..models import Subject, SubjectFolder, SubjectRequirement, User
+from ..models import FolderLink, Subject, SubjectFolder, SubjectRequirement, User
 from ..schemas import (
     ELECTIVE_NEEDS_CREDITS,
     GRADE_REQUIRES_APPROVAL,
     GRADED_SUBJECT_STATUSES,
+    FolderLinkCreate,
+    FolderLinkOrder,
+    FolderLinkUpdate,
     MissingRequirement,
     SubjectCreate,
     SubjectFolderCreate,
     SubjectFolderOrder,
     SubjectFolderOut,
+    SubjectFolderUpdate,
     SubjectNotesOut,
     SubjectNotesUpdate,
     SubjectOrder,
@@ -76,7 +80,13 @@ def _ensure_same_ids(requested: list[int], existing: Iterable[int], detail: str)
 
 
 def _user_subjects(db: Session, user: User) -> list[Subject]:
-    query = select(Subject).where(Subject.user_id == user.id).options(selectinload(Subject.folders)).order_by(Subject.level, Subject.position, Subject.id)
+    # Carpetas y sus links en dos consultas más, sin consultas por materia ni por carpeta.
+    query = (
+        select(Subject)
+        .where(Subject.user_id == user.id)
+        .options(selectinload(Subject.folders).selectinload(SubjectFolder.links))
+        .order_by(Subject.level, Subject.position, Subject.id)
+    )
     return list(db.scalars(query).all())
 
 
@@ -280,12 +290,14 @@ def reorder_folders(subject_id: int, payload: SubjectFolderOrder, user: User = D
 
 
 @router.patch("/folders/{folder_id}", response_model=SubjectOut)
-def rename_folder(folder_id: int, payload: SubjectFolderCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectOut:
+def update_folder(folder_id: int, payload: SubjectFolderUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectOut:
     folder = _get_owned_or_404(db, SubjectFolder, folder_id, user)
     subject = db.get(Subject, folder.subject_id)
-    if _name_taken(subject.folders, payload.name, exclude_id=folder.id):
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and _name_taken(subject.folders, data["name"], exclude_id=folder.id):
         raise HTTPException(status_code=409, detail="Ya existe una carpeta con ese nombre")
-    folder.name = payload.name
+    for field, value in data.items():
+        setattr(folder, field, value)
     db.commit()
     return _subject_out(db, user, subject.id)
 
@@ -293,4 +305,42 @@ def rename_folder(folder_id: int, payload: SubjectFolderCreate, user: User = Dep
 @router.delete("/folders/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_folder(folder_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
     db.delete(_get_owned_or_404(db, SubjectFolder, folder_id, user))
+    db.commit()
+
+
+# --- Archivos de las carpetas (links a Drive u otros sitios) ---
+
+
+@router.post("/folders/{folder_id}/links", response_model=SubjectOut, status_code=status.HTTP_201_CREATED)
+def create_link(folder_id: int, payload: FolderLinkCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectOut:
+    folder = _get_owned_or_404(db, SubjectFolder, folder_id, user)
+    position = max((link.position for link in folder.links), default=-1) + 1
+    db.add(FolderLink(user_id=user.id, folder_id=folder.id, title=payload.title, url=payload.url, position=position))
+    db.commit()
+    return _subject_out(db, user, folder.subject_id)
+
+
+@router.put("/folders/{folder_id}/links/order", response_model=SubjectOut)
+def reorder_links(folder_id: int, payload: FolderLinkOrder, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectOut:
+    folder = _get_owned_or_404(db, SubjectFolder, folder_id, user)
+    _ensure_same_ids(payload.ids, (link.id for link in folder.links), "Los ids no coinciden con los archivos de la carpeta")
+    by_id = {link.id: link for link in folder.links}
+    for index, link_id in enumerate(payload.ids):
+        by_id[link_id].position = index
+    db.commit()
+    return _subject_out(db, user, folder.subject_id)
+
+
+@router.patch("/links/{link_id}", response_model=SubjectOut)
+def update_link(link_id: int, payload: FolderLinkUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectOut:
+    link = _get_owned_or_404(db, FolderLink, link_id, user)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(link, field, value)
+    db.commit()
+    return _subject_out(db, user, db.get(SubjectFolder, link.folder_id).subject_id)
+
+
+@router.delete("/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_link(link_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    db.delete(_get_owned_or_404(db, FolderLink, link_id, user))
     db.commit()
