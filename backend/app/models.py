@@ -30,6 +30,7 @@ class User(Base):
     subjects: Mapped[list["Subject"]] = relationship(cascade="all, delete-orphan")
     subject_folders: Mapped[list["SubjectFolder"]] = relationship(cascade="all, delete-orphan")
     subject_requirements: Mapped[list["SubjectRequirement"]] = relationship(cascade="all, delete-orphan")
+    folder_links: Mapped[list["FolderLink"]] = relationship(cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -212,6 +213,8 @@ class Subject(Base):
     weekly_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Anotaciones rápidas del detalle (links, horarios, palabras sueltas).
     notes: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Link a la carpeta de Drive (o cualquier sitio) de la materia. Solo http/https (ver routers/faculty.py).
+    drive_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     # Nivel de cursado (1° año, 2° año...).
     level: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30), default="por_cursar")
@@ -237,6 +240,10 @@ class SubjectFolder(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", name="fk_subject_folders_subject_id_subjects", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(60))
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # Link a la carpeta de Drive de esta parte (FINAL, PRÁCTICO...).
+    drive_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # Archivos de la carpeta (links). El ORM los borra al borrar la carpeta: SQLite no aplica el ON DELETE CASCADE.
+    links: Mapped[list["FolderLink"]] = relationship(cascade="all, delete-orphan", order_by="FolderLink.position")
 
 
 class SubjectRequirement(Base):
@@ -250,3 +257,16 @@ class SubjectRequirement(Base):
     required_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", name="fk_subject_requirements_required_id_subjects", ondelete="CASCADE"), index=True)
     # "cursada" o "aprobada".
     kind: Mapped[str] = mapped_column(String(10))
+
+
+class FolderLink(Base):
+    """Archivo de una carpeta de materia: un link (Drive u otro sitio) que se abre en otra pestaña."""
+
+    __tablename__ = "folder_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_folder_links_user_id_users"), index=True)
+    folder_id: Mapped[int] = mapped_column(ForeignKey("subject_folders.id", name="fk_folder_links_folder_id_subject_folders", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(120))
+    url: Mapped[str] = mapped_column(String(2000))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
