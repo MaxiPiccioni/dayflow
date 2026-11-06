@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .deps import current_user
-from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Task, Transaction, User
+from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Subject, Task, Transaction, User
 from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
 from .routers import faculty
 from .schemas import (
@@ -236,8 +236,17 @@ def _repeat_occurrence_dates(start: date_type, repeat_days: list[str] | None) ->
     return [day for day in (start + timedelta(days=offset) for offset in range(REPEAT_HORIZON_DAYS + 1)) if day.weekday() in weekdays]
 
 
+def _ensure_subject_owned(db: Session, user: User, subject_id: int | None) -> None:
+    """La materia asociada a una tarea o a un registro de Pomodoro tiene que ser del usuario."""
+    if subject_id is None:
+        return
+    if not db.scalar(select(Subject.id).where(Subject.id == subject_id, Subject.user_id == user.id)):
+        raise HTTPException(status_code=404, detail="Materia no encontrada")
+
+
 @app.post("/api/tasks", response_model=list[TaskOut], status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Task]:
+    _ensure_subject_owned(db, user, payload.subject_id)
     data = payload.model_dump(exclude={"repeat_days"})
     occurrences = _repeat_occurrence_dates(payload.due_date, payload.repeat_days)
     tasks = [Task(user_id=user.id, **{**data, "due_date": occurrence}) for occurrence in occurrences]
@@ -264,6 +273,7 @@ def update_task(task_id: int, payload: TaskUpdate, user: User = Depends(current_
     task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == user.id))
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _ensure_subject_owned(db, user, payload.subject_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
     db.commit()
@@ -653,21 +663,27 @@ def get_pomodoro_history(user: User = Depends(current_user), db: Session = Depen
     start = today - timedelta(days=(today.weekday() + 1) % 7)
     end = start + timedelta(days=6)
     rows = db.scalars(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date >= start, PomodoroLog.log_date <= end)).all()
-    by_date = {row.log_date: row.seconds for row in rows}
+    by_date: dict[date_type, int] = {}
+    for row in rows:
+        by_date[row.log_date] = by_date.get(row.log_date, 0) + row.seconds
     return [PomodoroLogOut(date=start + timedelta(days=offset), seconds=by_date.get(start + timedelta(days=offset), 0)) for offset in range(7)]
 
 
 @app.post("/api/pomodoro/log", response_model=PomodoroLogOut)
 def log_pomodoro_seconds(payload: PomodoroLogCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroLogOut:
+    _ensure_subject_owned(db, user, payload.subject_id)
     today = date_type.today()
-    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today))
+    subject_filter = PomodoroLog.subject_id.is_(None) if payload.subject_id is None else PomodoroLog.subject_id == payload.subject_id
+    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today, subject_filter))
     if not row:
-        row = PomodoroLog(user_id=user.id, log_date=today, seconds=0)
+        row = PomodoroLog(user_id=user.id, log_date=today, seconds=0, subject_id=payload.subject_id)
         db.add(row)
     row.seconds += payload.seconds
     db.commit()
     db.refresh(row)
-    return PomodoroLogOut(date=row.log_date, seconds=row.seconds)
+    # Se devuelve el total del día (todas las materias) para que el gráfico semanal no cambie.
+    total = db.scalar(select(func.coalesce(func.sum(PomodoroLog.seconds), 0)).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today))
+    return PomodoroLogOut(date=row.log_date, seconds=int(total))
 
 
 def _period_end(start: date_type) -> date_type:

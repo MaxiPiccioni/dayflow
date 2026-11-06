@@ -61,6 +61,7 @@ export function FacultyPanel() {
   const [reloadKey, setReloadKey] = useState(0);
   const [filter, setFilter] = useState(readFilter);
   const [selectedId, setSelectedId] = useState(null);
+  const [study, setStudy] = useState({}); // subject_id -> { total_seconds, week_seconds, pending_tasks }
   const [manager, setManager] = useState(null); // { initialForm } mientras el modal está abierto
 
   useEffect(() => {
@@ -70,6 +71,15 @@ export function FacultyPanel() {
       .catch((err) => { if (!cancelled) setLoadError(err.message); });
     return () => { cancelled = true; };
   }, [reloadKey]);
+
+  // El resumen de estudio es secundario: si falla, el detalle se muestra con ceros.
+  useEffect(() => {
+    let cancelled = false;
+    api("/faculty/study")
+      .then((rows) => { if (!cancelled) setStudy(Object.fromEntries(rows.map((row) => [row.subject_id, row]))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   const retry = () => { setLoadError(""); setSubjects(null); setReloadKey((key) => key + 1); };
   const chooseFilter = (value) => { setFilter(value); saveFilter(value); };
@@ -157,6 +167,7 @@ export function FacultyPanel() {
           onChange={applySubject}
           onOpen={openSubject}
           onNotesSaved={applyNotes}
+          study={study[selected.id]}
         />
         {modal}
       </>

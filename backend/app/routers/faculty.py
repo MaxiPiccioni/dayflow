@@ -2,15 +2,15 @@
 
 from collections import defaultdict
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..deps import current_user
-from ..models import FolderLink, Subject, SubjectFolder, SubjectRequirement, User
+from ..models import FolderLink, PomodoroLog, Subject, SubjectFolder, SubjectRequirement, Task, User
 from ..schemas import (
     ELECTIVE_NEEDS_CREDITS,
     GRADE_REQUIRES_APPROVAL,
@@ -28,6 +28,7 @@ from ..schemas import (
     SubjectNotesUpdate,
     SubjectOrder,
     SubjectOut,
+    SubjectStudyOut,
     SubjectUpdate,
 )
 
@@ -184,6 +185,27 @@ def list_subjects(user: User = Depends(current_user), db: Session = Depends(get_
     return _all_outs(db, user)
 
 
+@router.get("/study", response_model=list[SubjectStudyOut])
+def study_summary(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[SubjectStudyOut]:
+    """Tiempo de estudio (Pomodoro) y tareas pendientes por materia. Solo materias con algún dato."""
+    today = date.today()
+    week_start = today - timedelta(days=(today.weekday() + 1) % 7)  # semana de domingo a sábado, igual que el gráfico
+    totals = {sid: secs for sid, secs in db.execute(
+        select(PomodoroLog.subject_id, func.sum(PomodoroLog.seconds))
+        .where(PomodoroLog.user_id == user.id, PomodoroLog.subject_id.is_not(None))
+        .group_by(PomodoroLog.subject_id))}
+    weeks = {sid: secs for sid, secs in db.execute(
+        select(PomodoroLog.subject_id, func.sum(PomodoroLog.seconds))
+        .where(PomodoroLog.user_id == user.id, PomodoroLog.subject_id.is_not(None), PomodoroLog.log_date >= week_start)
+        .group_by(PomodoroLog.subject_id))}
+    pending = {sid: count for sid, count in db.execute(
+        select(Task.subject_id, func.count(Task.id))
+        .where(Task.user_id == user.id, Task.subject_id.is_not(None), Task.completed.is_(False))
+        .group_by(Task.subject_id))}
+    ids = sorted(set(totals) | set(pending))
+    return [SubjectStudyOut(subject_id=sid, total_seconds=int(totals.get(sid, 0)), week_seconds=int(weeks.get(sid, 0)), pending_tasks=int(pending.get(sid, 0))) for sid in ids]
+
+
 @router.post("/subjects", response_model=SubjectOut, status_code=status.HTTP_201_CREATED)
 def create_subject(payload: SubjectCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SubjectOut:
     subjects = db.scalars(select(Subject).where(Subject.user_id == user.id)).all()
@@ -263,6 +285,9 @@ def delete_subject(subject_id: int, user: User = Depends(current_user), db: Sess
     # SQLite no aplica el ON DELETE CASCADE: las correlativas que otras materias tienen sobre esta se
     # borran a mano. Las propias (subject.requirements) y las carpetas las borra la cascada del ORM.
     db.execute(delete(SubjectRequirement).where(SubjectRequirement.user_id == user.id, SubjectRequirement.required_id == subject.id))
+    # Tareas y registros de Pomodoro se conservan sin materia (tampoco hay ON DELETE SET NULL en SQLite).
+    db.execute(update(Task).where(Task.user_id == user.id, Task.subject_id == subject.id).values(subject_id=None))
+    db.execute(update(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.subject_id == subject.id).values(subject_id=None))
     db.delete(subject)
     db.commit()
 

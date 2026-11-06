@@ -44,6 +44,8 @@ class Task(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Materia de Facultad a la que pertenece la tarea (opcional). Si se borra la materia queda en NULL.
+    subject_id: Mapped[int | None] = mapped_column(ForeignKey("subjects.id", ondelete="SET NULL", name="fk_tasks_subject_id_subjects"), nullable=True, index=True)
 
 
 class Category(Base):
@@ -173,6 +175,8 @@ class PomodoroLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     log_date: Mapped[date] = mapped_column(Date, index=True)
     seconds: Mapped[int] = mapped_column(Integer, default=0)
+    # Materia en la que se estudió (opcional). Hay una fila por día y por materia (o sin materia).
+    subject_id: Mapped[int | None] = mapped_column(ForeignKey("subjects.id", ondelete="SET NULL", name="fk_pomodoro_logs_subject_id_subjects"), nullable=True, index=True)
 
 
 class ShoppingItem(Base):

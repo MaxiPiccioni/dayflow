@@ -37,6 +37,7 @@ class TaskCreate(BaseModel):
     category: str | None = Field(default=None, min_length=1, max_length=50)
     notes: str | None = Field(default=None, max_length=2000)
     priority: str | None = Field(default=None, pattern="^(Alta|Media|Baja)$")
+    subject_id: int | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -46,6 +47,7 @@ class TaskUpdate(BaseModel):
     category: str | None = Field(default=None, min_length=1, max_length=50)
     notes: str | None = Field(default=None, max_length=2000)
     priority: str | None = Field(default=None, pattern="^(Alta|Media|Baja)$")
+    subject_id: int | None = None
 
 
 class TaskOut(TaskCreate):
@@ -307,6 +309,7 @@ class PomodoroLogOut(BaseModel):
 
 class PomodoroLogCreate(BaseModel):
     seconds: int = Field(ge=1, le=3600)
+    subject_id: int | None = None
 
 
 # --- Facultad ---
@@ -524,3 +527,10 @@ class SubjectNotesUpdate(BaseModel):
 class SubjectNotesOut(BaseModel):
     notes: str
     updated_at: datetime
+
+
+class SubjectStudyOut(BaseModel):
+    subject_id: int
+    total_seconds: int
+    week_seconds: int
+    pending_tasks: int
