@@ -1,18 +1,9 @@
 import { useId, useState } from "react";
 import { Check, ChevronDown, Plus, X } from "lucide-react";
-import { inputClass, levelLabel, subjectLabel } from "@/lib/faculty";
+import { ALL_FILTER, facultyGroups, inputClass, subjectLabel } from "@/lib/faculty";
 
 // Para buscar sin importar mayúsculas ni tildes ("algebra" encuentra "Álgebra").
 const normalize = (text) => text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-
-// Grupos del selector: curriculares por año y, al final, las electivas.
-function groupCandidates(subjects) {
-  const curricular = subjects.filter((subject) => !subject.elective);
-  const electives = subjects.filter((subject) => subject.elective);
-  const groups = [...new Set(curricular.map((subject) => subject.level))].map((level) => ({ key: `level-${level}`, title: levelLabel(level), items: curricular.filter((subject) => subject.level === level) }));
-  if (electives.length) groups.push({ key: "electives", title: "Electivas", items: electives });
-  return groups;
-}
 
 // Selector múltiple de correlativas: un botón visible que abre debajo la búsqueda y la lista; las elegidas
 // quedan como chips. `disabled` mapea id -> motivo (por ejemplo "incluida en aprobada").
@@ -25,7 +16,8 @@ export function RequirementPicker({ label, candidates, selected, onChange, disab
   const toggle = (id) => onChange(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
   const needle = normalize(query.trim());
   const visible = candidates.filter((subject) => !needle || normalize(subject.name).includes(needle) || normalize(subject.code ?? "").includes(needle));
-  const groups = groupCandidates(visible);
+  // Mismos grupos que el filtro "Todas": curriculares por año y las electivas al final.
+  const groups = facultyGroups(visible, ALL_FILTER);
   const chosen = selected.filter((id) => byId.has(id));
 
   return (

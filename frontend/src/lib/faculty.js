@@ -91,7 +91,8 @@ export const SUBJECT_COLORS = {
 export const DEFAULT_COLOR = "lime";
 export const colorFor = (key) => (SUBJECT_COLORS[key] ?? SUBJECT_COLORS[DEFAULT_COLOR]).hex;
 
-export const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8];
+// La carrera tiene 5 años (el backend acepta level de 1 a 5).
+export const LEVELS = [1, 2, 3, 4, 5];
 export const levelLabel = (level) => `${level}° año`;
 
 export const formatGrade = (grade) => Number(grade).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -114,12 +115,30 @@ export const MODALITIES = {
 };
 export const MODALITY_KEYS = Object.keys(MODALITIES);
 
-export const KIND_FILTERS = [
-  ["all", "Todas"],
-  ["curricular", "Curriculares"],
-  ["elective", "Electivas"],
-];
-export const matchesKind = (subject, kind) => kind === "all" || (kind === "elective" ? subject.elective : !subject.elective);
+// Filtro del dashboard: Todas, un año (solo curriculares) o Electivas.
+export const ALL_FILTER = "all";
+export const ELECTIVES_FILTER = "electives";
+export const FACULTY_FILTERS = [[ALL_FILTER, "Todas"], ...LEVELS.map((level) => [String(level), levelLabel(level)]), [ELECTIVES_FILTER, "Electivas"]];
+export const isValidFilter = (value) => FACULTY_FILTERS.some(([key]) => key === value);
+
+const groupByLevel = (subjects) => [...new Set(subjects.map((subject) => subject.level))]
+  .sort((a, b) => a - b)
+  .map((level) => ({ key: `level-${level}`, title: levelLabel(level), items: subjects.filter((subject) => subject.level === level) }));
+
+// Grupos a mostrar según el filtro. "Todas": curriculares por año y al final las electivas. Un año: solo sus
+// curriculares (un grupo, aunque esté vacío). "Electivas": las electivas por año.
+export function facultyGroups(subjects, filter) {
+  const curricular = subjects.filter((subject) => !subject.elective);
+  const electives = subjects.filter((subject) => subject.elective);
+  if (filter === ELECTIVES_FILTER) return groupByLevel(electives);
+  if (filter !== ALL_FILTER) {
+    const level = Number(filter);
+    return [{ key: `level-${level}`, title: levelLabel(level), items: curricular.filter((subject) => subject.level === level) }];
+  }
+  const groups = groupByLevel(curricular);
+  if (electives.length) groups.push({ key: ELECTIVES_FILTER, title: "Electivas", items: electives });
+  return groups;
+}
 
 export const REQUIREMENT_LABEL = { aprobada: "aprobada", cursada: "cursada" };
 

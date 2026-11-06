@@ -317,7 +317,8 @@ GRADE_REQUIRES_APPROVAL = "Solo las materias aprobadas pueden tener nota final"
 
 SubjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 FolderName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
-SubjectLevel = Annotated[int, Field(ge=1, le=8)]
+# La carrera tiene 5 años.
+SubjectLevel = Annotated[int, Field(ge=1, le=5)]
 SubjectGrade = Annotated[Decimal, Field(ge=1, le=10, max_digits=4, decimal_places=2)]
 SubjectCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10)]
 SubjectModality = Literal["A", "1C", "2C", "1C-2C", "2C-1C"]

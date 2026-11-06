@@ -91,13 +91,14 @@ def test_delete_subject_removes_its_folders(client, db, user):
     "payload",
     [
         {"name": "X", "level": 0},
+        {"name": "X", "level": 6},
         {"name": "X", "level": 9},
         {"name": "X", "level": 1, "status": "aprobado"},
         {"name": "   ", "level": 1},
         {"name": "X", "level": 1, "grade": 11, "status": "aprobada"},
         {"name": "X", "level": 1, "grade": 0.5, "status": "aprobada"},
     ],
-    ids=["level-0", "level-9", "bad-status", "blank-name", "grade-11", "grade-below-1"],
+    ids=["level-0", "level-6", "level-9", "bad-status", "blank-name", "grade-11", "grade-below-1"],
 )
 def test_create_validation(client, user, payload):
     assert client.post("/api/faculty/subjects", json=payload, headers=user).status_code == 422
@@ -105,7 +106,8 @@ def test_create_validation(client, user, payload):
 
 def test_update_validation(client, user):
     subject = create_subject(client, user)
-    assert patch_subject(client, user, subject["id"], level=9).status_code == 422
+    assert patch_subject(client, user, subject["id"], level=6).status_code == 422
+    assert patch_subject(client, user, subject["id"], level=5).json()["level"] == 5
     assert patch_subject(client, user, subject["id"], status="otro").status_code == 422
 
 

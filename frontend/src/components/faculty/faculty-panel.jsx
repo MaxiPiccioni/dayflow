@@ -5,27 +5,29 @@ import { StatusBadge, SubjectCard } from "@/components/faculty/subject-card";
 import { SubjectDetail } from "@/components/faculty/subject-detail";
 import { SubjectManagerModal } from "@/components/faculty/subject-manager-modal";
 import { api } from "@/lib/api";
-import { formatGrade, KIND_FILTERS, levelLabel, matchesKind, REQUIRED_ELECTIVE_CREDITS, sortSubjects, summarize } from "@/lib/faculty";
+import { ALL_FILTER, ELECTIVES_FILTER, FACULTY_FILTERS, facultyGroups, formatGrade, isValidFilter, REQUIRED_ELECTIVE_CREDITS, sortSubjects, summarize } from "@/lib/faculty";
 
-const LEVEL_KEY = "dayflow_faculty_level";
-const KIND_KEY = "dayflow_faculty_kind";
-const ALL = "all";
+const FILTER_KEY = "dayflow_faculty_filter";
+// Claves de los filtros anteriores (nivel y tipo por separado), que ya no se usan.
+const OLD_KEYS = ["dayflow_faculty_level", "dayflow_faculty_kind"];
 
-function readSaved(key) {
+function readFilter() {
   try {
-    return localStorage.getItem(key) ?? ALL;
+    OLD_KEYS.forEach((key) => localStorage.removeItem(key));
+    const saved = localStorage.getItem(FILTER_KEY);
+    return isValidFilter(saved) ? saved : ALL_FILTER;
   } catch (err) {
-    // Sin acceso a localStorage (navegación privada, prerender): se arranca en "Todos"/"Todas".
-    console.warn(`No se pudo leer ${key}`, err);
-    return ALL;
+    // Sin acceso a localStorage (navegación privada, prerender): se arranca en "Todas".
+    console.warn("No se pudo leer el filtro de Facultad", err);
+    return ALL_FILTER;
   }
 }
 
-function save(key, value) {
+function saveFilter(value) {
   try {
-    localStorage.setItem(key, value);
+    localStorage.setItem(FILTER_KEY, value);
   } catch (err) {
-    console.warn(`No se pudo guardar ${key}`, err);
+    console.warn("No se pudo guardar el filtro de Facultad", err);
   }
 }
 
@@ -55,8 +57,7 @@ export function FacultyPanel() {
   const [subjects, setSubjects] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [level, setLevel] = useState(() => readSaved(LEVEL_KEY));
-  const [kind, setKind] = useState(() => readSaved(KIND_KEY));
+  const [filter, setFilter] = useState(readFilter);
   const [selectedId, setSelectedId] = useState(null);
   const [manager, setManager] = useState(null); // { initialForm } mientras el modal está abierto
 
@@ -69,8 +70,7 @@ export function FacultyPanel() {
   }, [reloadKey]);
 
   const retry = () => { setLoadError(""); setSubjects(null); setReloadKey((key) => key + 1); };
-  const chooseLevel = (value) => { setLevel(value); save(LEVEL_KEY, value); };
-  const chooseKind = (value) => { setKind(value); save(KIND_KEY, value); };
+  const chooseFilter = (value) => { setFilter(value); saveFilter(value); };
 
   // Cambiar el estado o las correlativas de una materia cambia la disponibilidad y required_by de otras:
   // se aplica al instante lo que devolvió el backend y después se trae la lista completa.
@@ -127,18 +127,15 @@ export function FacultyPanel() {
     return <Card>{header}<p className="py-8 text-center text-sm text-zinc-400">Cargando materias…</p></Card>;
   }
 
-  const activeKind = KIND_FILTERS.some(([value]) => value === kind) ? kind : ALL;
-  const visible = subjects.filter((subject) => matchesKind(subject, activeKind));
-  const levels = [...new Set(visible.map((subject) => subject.level))];
-  // Si el nivel guardado ya no tiene materias (con el tipo elegido), se muestra "Todos".
-  const activeLevel = level !== ALL && levels.includes(Number(level)) ? Number(level) : ALL;
+  const groups = facultyGroups(subjects, filter);
+  const filterIsLevel = filter !== ALL_FILTER && filter !== ELECTIVES_FILTER;
   const selected = subjects.find((subject) => subject.id === selectedId);
   const summary = summarize(subjects);
   const modal = manager && (
     <SubjectManagerModal
       subjects={subjects}
       initialForm={manager.initialForm}
-      defaultLevel={activeLevel === ALL ? 1 : activeLevel}
+      defaultLevel={filterIsLevel ? Number(filter) : 1}
       onSave={saveSubject}
       onDelete={deleteSubject}
       onReorder={reorderSubjects}
@@ -196,35 +193,27 @@ export function FacultyPanel() {
 
       {subjects.length > 0 && (
         <Card>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar por nivel">
-              {[ALL, ...levels].map((value) => (
-                <button key={value} type="button" onClick={() => chooseLevel(String(value))} aria-pressed={activeLevel === value} className={chipClass(activeLevel === value)}>
-                  {value === ALL ? "Todos" : levelLabel(value)}
-                </button>
-              ))}
-            </div>
-            <div className="flex rounded-full bg-zinc-100 p-1 dark:bg-zinc-800" role="group" aria-label="Filtrar por tipo">
-              {KIND_FILTERS.map(([value, label]) => (
-                <button key={value} type="button" onClick={() => chooseKind(value)} aria-pressed={activeKind === value} className={`rounded-full px-3 py-1 text-xs font-medium ${activeKind === value ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+          {/* En celular la fila scrollea dentro de su contenedor, sin generar scroll en la página. */}
+          <div className="scrollbar-thin -mx-1 mb-4 overflow-x-auto px-1 pb-1">
+            <div className="flex w-max gap-2" role="group" aria-label="Filtrar materias">
+              {FACULTY_FILTERS.map(([value, label]) => (
+                <button key={value} type="button" onClick={() => chooseFilter(value)} aria-pressed={filter === value} className={`shrink-0 ${chipClass(filter === value)}`}>
                   {label}
                 </button>
               ))}
             </div>
           </div>
-          {visible.length === 0 ? (
-            <p className="py-6 text-center text-sm text-zinc-400">No hay materias de este tipo.</p>
-          ) : activeLevel === ALL ? (
+          {groups.every((group) => group.items.length === 0) ? (
+            <p className="py-6 text-center text-sm text-zinc-400">{filter === ELECTIVES_FILTER ? "Todavía no cargaste electivas." : filterIsLevel ? `No hay materias cargadas en ${groups[0].title}.` : "No hay materias para mostrar."}</p>
+          ) : (
             <div className="space-y-6">
-              {levels.map((levelNumber) => (
-                <section key={levelNumber}>
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{levelLabel(levelNumber)}</h3>
-                  <SubjectGrid subjects={visible.filter((subject) => subject.level === levelNumber)} onOpen={openSubject} />
+              {groups.map((group) => (
+                <section key={group.key}>
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{group.title}</h3>
+                  <SubjectGrid subjects={group.items} onOpen={openSubject} />
                 </section>
               ))}
             </div>
-          ) : (
-            <SubjectGrid subjects={visible.filter((subject) => subject.level === activeLevel)} onOpen={openSubject} />
           )}
         </Card>
       )}
