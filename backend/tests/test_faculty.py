@@ -1,6 +1,6 @@
 import pytest
 
-from app.models import Subject, SubjectFolder, SubjectRequirement
+from app.models import FolderLink, Subject, SubjectFolder, SubjectRequirement
 
 GRADE_ERROR = "Solo las materias aprobadas pueden tener nota final"
 DEFAULT_FOLDERS = ["FINAL", "PRÁCTICO", "TEÓRICO", "TPS"]
@@ -515,3 +515,166 @@ def test_notes_length_limit_and_missing_subject(client, user):
     assert client.patch(path, json={"notes": "x" * 5000}, headers=user).status_code == 200
     assert client.patch(path, json={"notes": "x" * 5001}, headers=user).status_code == 422
     assert client.patch("/api/faculty/subjects/999/notes", json={"notes": "x"}, headers=user).status_code == 404
+
+
+# --- Links de Drive y archivos de carpetas ---
+
+LINK_ERROR = "El link tiene que empezar con http:// o https://"
+DRIVE = "https://drive.google.com/drive/folders/abc123"
+INVALID_URLS = ["javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "ftp://archivos.example.com/x", "drive.google.com/x", "https://", "https://a b.com", "//example.com/x", "http://[::1"]
+
+
+def first_folder(subject: dict) -> dict:
+    return subject["folders"][0]
+
+
+def add_link(client, user, folder_id, title="Guía 1", url="https://docs.google.com/document/d/1"):
+    return client.post(f"/api/faculty/folders/{folder_id}/links", json={"title": title, "url": url}, headers=user)
+
+
+def link_titles(subject: dict, folder_index: int = 0) -> list[str]:
+    return [link["title"] for link in subject["folders"][folder_index]["links"]]
+
+
+def test_subject_and_folder_drive_url_crud(client, user):
+    subject = create_subject(client, user)
+    assert subject["drive_url"] is None and all(folder["drive_url"] is None and folder["links"] == [] for folder in subject["folders"])
+    body = patch_subject(client, user, subject["id"], drive_url=f"  {DRIVE}  ").json()
+    assert body["drive_url"] == DRIVE
+    folder_id = first_folder(body)["id"]
+    body = client.patch(f"/api/faculty/folders/{folder_id}", json={"drive_url": "http://example.com/practico"}, headers=user).json()
+    assert first_folder(body)["drive_url"] == "http://example.com/practico"
+    # Cambiar solo el nombre no toca el link, y null lo borra.
+    body = client.patch(f"/api/faculty/folders/{folder_id}", json={"name": "Final 1"}, headers=user).json()
+    assert (first_folder(body)["name"], first_folder(body)["drive_url"]) == ("Final 1", "http://example.com/practico")
+    assert first_folder(client.patch(f"/api/faculty/folders/{folder_id}", json={"drive_url": None}, headers=user).json())["drive_url"] is None
+    assert patch_subject(client, user, subject["id"], drive_url=None).json()["drive_url"] is None
+    assert client.patch(f"/api/faculty/folders/{folder_id}", json={"name": None}, headers=user).status_code == 422
+
+
+@pytest.mark.parametrize("url", INVALID_URLS)
+def test_invalid_urls_are_rejected_everywhere(client, db, user, url):
+    subject = create_subject(client, user)
+    folder_id = first_folder(subject)["id"]
+    responses = [
+        patch_subject(client, user, subject["id"], drive_url=url),
+        client.patch(f"/api/faculty/folders/{folder_id}", json={"drive_url": url}, headers=user),
+        add_link(client, user, folder_id, url=url),
+    ]
+    for response in responses:
+        assert response.status_code == 422
+        assert error_message(response) == LINK_ERROR
+    db.expire_all()
+    assert db.query(FolderLink).count() == 0
+    assert db.get(Subject, subject["id"]).drive_url is None
+
+
+@pytest.mark.parametrize("url", ["https://drive.google.com/file/d/1/view", "http://example.com", "HTTPS://Example.com/Path?x=1#y", "https://a.b/" + "x" * 100])
+def test_valid_urls_are_accepted(client, user, url):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    assert add_link(client, user, folder_id, url=url).status_code == 201
+
+
+def test_url_length_limit(client, user):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    assert add_link(client, user, folder_id, url="https://a.com/" + "x" * 1985).status_code == 201
+    assert add_link(client, user, folder_id, url="https://a.com/" + "x" * 1990).status_code == 422
+
+
+def test_link_crud_and_order_of_creation(client, user):
+    subject = create_subject(client, user)
+    folder_id = first_folder(subject)["id"]
+    for title in ("Primero", "Segundo", "Tercero"):
+        body = add_link(client, user, folder_id, title=f" {title} ").json()
+    assert link_titles(body) == ["Primero", "Segundo", "Tercero"]
+    assert [link["position"] for link in body["folders"][0]["links"]] == [0, 1, 2]
+    assert all(folder["links"] == [] for folder in body["folders"][1:])
+
+    link_id = body["folders"][0]["links"][1]["id"]
+    body = client.patch(f"/api/faculty/links/{link_id}", json={"title": "Editado", "url": "https://example.com/nuevo"}, headers=user).json()
+    edited = body["folders"][0]["links"][1]
+    assert (edited["title"], edited["url"]) == ("Editado", "https://example.com/nuevo")
+    body = client.patch(f"/api/faculty/links/{link_id}", json={"title": "Solo título"}, headers=user).json()
+    assert body["folders"][0]["links"][1]["url"] == "https://example.com/nuevo"
+    for bad in ({"title": None}, {"url": None}, {"title": "  "}, {"url": "javascript:alert(1)"}):
+        assert client.patch(f"/api/faculty/links/{link_id}", json=bad, headers=user).status_code == 422
+
+    assert client.delete(f"/api/faculty/links/{link_id}", headers=user).status_code == 204
+    assert link_titles(list_subjects(client, user)[0]) == ["Primero", "Tercero"]
+    assert client.delete(f"/api/faculty/links/{link_id}", headers=user).status_code == 404
+    assert client.patch(f"/api/faculty/links/{link_id}", json={"title": "x"}, headers=user).status_code == 404
+    # Tras borrar, el siguiente link va al final.
+    assert link_titles(add_link(client, user, folder_id, title="Cuarto").json()) == ["Primero", "Tercero", "Cuarto"]
+
+
+def test_link_title_validation_and_missing_folder(client, user):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    assert client.post(f"/api/faculty/folders/{folder_id}/links", json={"title": "   ", "url": "https://a.com"}, headers=user).status_code == 422
+    assert client.post(f"/api/faculty/folders/{folder_id}/links", json={"title": "x" * 121, "url": "https://a.com"}, headers=user).status_code == 422
+    assert add_link(client, user, 999).status_code == 404
+
+
+def test_reorder_links_and_exact_ids(client, user):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    other_folder_id = create_subject(client, user, name="Otra")["folders"][0]["id"]
+    for title in ("A", "B", "C"):
+        body = add_link(client, user, folder_id, title=title).json()
+    ids = [link["id"] for link in body["folders"][0]["links"]]
+    foreign = add_link(client, user, other_folder_id, title="Ajeno").json()["folders"][0]["links"][0]["id"]
+
+    response = client.put(f"/api/faculty/folders/{folder_id}/links/order", json={"ids": [ids[2], ids[0], ids[1]]}, headers=user)
+    assert response.status_code == 200
+    assert link_titles(response.json()) == ["C", "A", "B"]
+    assert link_titles(list_subjects(client, user)[0]) == ["C", "A", "B"]
+    for bad in (ids[:2], [*ids, foreign], [ids[0], ids[0], ids[1]], [*ids[:2], foreign]):
+        response = client.put(f"/api/faculty/folders/{folder_id}/links/order", json={"ids": bad}, headers=user)
+        assert (response.status_code, response.json()["detail"]) == (400, "Los ids no coinciden con los archivos de la carpeta")
+    assert client.put("/api/faculty/folders/999/links/order", json={"ids": []}, headers=user).status_code == 404
+
+
+def test_deleting_a_folder_deletes_its_links(client, db, user):
+    subject = create_subject(client, user)
+    folder_id = first_folder(subject)["id"]
+    other_id = subject["folders"][1]["id"]
+    add_link(client, user, folder_id)
+    add_link(client, user, other_id, title="Queda")
+    assert client.delete(f"/api/faculty/folders/{folder_id}", headers=user).status_code == 204
+    db.expire_all()
+    assert [link.title for link in db.query(FolderLink).all()] == ["Queda"]
+
+
+def test_deleting_a_subject_deletes_folders_and_links(client, db, user):
+    subject = create_subject(client, user, name="A borrar")
+    keep = create_subject(client, user, name="Queda")
+    for folder in subject["folders"][:2]:
+        add_link(client, user, folder["id"])
+    add_link(client, user, keep["folders"][0]["id"], title="Se conserva")
+    assert client.delete(f"/api/faculty/subjects/{subject['id']}", headers=user).status_code == 204
+    db.expire_all()
+    assert [link.title for link in db.query(FolderLink).all()] == ["Se conserva"]
+    assert db.query(SubjectFolder).count() == 4
+
+
+def test_list_does_not_query_per_folder(client, db, user):
+    # Dos materias con links: la cantidad de consultas del listado no crece con ellas.
+    from sqlalchemy import event
+
+    from app.database import engine
+
+    def count_queries() -> int:
+        statements = []
+        listener = lambda conn, cursor, statement, *args: statements.append(statement)  # noqa: E731
+        event.listen(engine, "before_cursor_execute", listener)
+        try:
+            assert client.get("/api/faculty/subjects", headers=user).status_code == 200
+        finally:
+            event.remove(engine, "before_cursor_execute", listener)
+        return len([statement for statement in statements if statement.lstrip().upper().startswith("SELECT")])
+
+    one = create_subject(client, user, name="Una")
+    add_link(client, user, one["folders"][0]["id"])
+    baseline = count_queries()
+    for index in range(3):
+        extra = create_subject(client, user, name=f"Extra {index}")
+        add_link(client, user, extra["folders"][0]["id"])
+    assert count_queries() == baseline
