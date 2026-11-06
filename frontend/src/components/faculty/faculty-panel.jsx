@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { GraduationCap, Plus, Settings2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { StatusBadge, SubjectCard } from "@/components/faculty/subject-card";
 import { SubjectDetail } from "@/components/faculty/subject-detail";
 import { SubjectManagerModal } from "@/components/faculty/subject-manager-modal";
@@ -39,11 +40,12 @@ function SubjectGrid({ subjects, onOpen }) {
   );
 }
 
-function StatTile({ label, value, detail }) {
+function StatTile({ label, value, detail, progress, className = "" }) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className={`rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 ${className}`}>
       <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
       <p className="mt-1 text-3xl font-bold leading-none text-zinc-950 dark:text-zinc-50">{value}</p>
+      {progress !== undefined && <div className="mt-2.5"><Progress value={progress} /></div>}
       {detail && <p className="mt-1.5 text-xs text-zinc-400">{detail}</p>}
     </div>
   );
@@ -165,29 +167,34 @@ export function FacultyPanel() {
     <div className="space-y-5">
       <Card>
         {header}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <StatTile
+            label="Carrera"
+            value={`${summary.careerPercent} %`}
+            detail={summary.curricularTotal ? `${summary.curricularApproved} de ${summary.curricularTotal} materias` : "Cargá tus materias"}
+            progress={summary.careerPercent}
+            className="col-span-2 lg:col-span-1"
+          />
+          <StatTile label="Materias aprobadas" value={summary.curricularApproved} detail={`de ${summary.curricularTotal}`} />
+          <StatTile label="Créditos de electivas" value={summary.electiveCredits} detail={`de ${REQUIRED_ELECTIVE_CREDITS} requeridos`} />
+          <StatTile label="Promedio" value={summary.average === null ? "—" : formatGrade(summary.average)} detail={`${summary.gradedCount} con nota`} />
+          <StatTile label="Disponibles para cursar" value={summary.availableCount} />
+        </div>
         {subjects.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="mt-6 flex flex-col items-center gap-3 py-6 text-center">
             <GraduationCap size={40} className="text-zinc-300 dark:text-zinc-600" />
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Todavía no cargaste materias. Empezá por las de tu primer año.</p>
             <button type="button" onClick={() => setManager({ initialForm: {} })} className="flex items-center gap-1 rounded-xl bg-lime-200 px-4 py-2 text-sm font-semibold text-lime-950"><Plus size={15} /> Agregar materia</button>
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <StatTile label="Materias aprobadas" value={summary.curricularApproved} detail={`de ${summary.curricularTotal}`} />
-              <StatTile label="Créditos de electivas" value={summary.electiveCredits} detail={`de ${REQUIRED_ELECTIVE_CREDITS} requeridos`} />
-              <StatTile label="Promedio" value={summary.average === null ? "—" : formatGrade(summary.average)} detail={`${summary.gradedCount} con nota`} />
-              <StatTile label="Disponibles para cursar" value={summary.availableCount} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2" aria-label="Materias por estado">
-              {summary.byStatus.map(({ key, count }) => (
-                <span key={key} className="flex items-center gap-1">
-                  <StatusBadge status={key} />
-                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{count}</span>
-                </span>
-              ))}
-            </div>
-          </>
+          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2" aria-label="Materias por estado">
+            {summary.byStatus.map(({ key, count }) => (
+              <span key={key} className="flex items-center gap-1">
+                <StatusBadge status={key} />
+                <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{count}</span>
+              </span>
+            ))}
+          </div>
         )}
       </Card>
 

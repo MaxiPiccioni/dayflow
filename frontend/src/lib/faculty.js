@@ -171,6 +171,9 @@ export function summarize(subjects) {
     // Las electivas no cuentan en "materias aprobadas": suman créditos aparte.
     curricularApproved: curricular.filter((subject) => statusInfo(subject.status).approved).length,
     curricularTotal: curricular.length,
+    // Porcentaje entero de la carrera (solo curriculares). Se redondea hacia abajo para no mostrar
+    // 100 % antes de tener todas aprobadas.
+    careerPercent: curricular.length ? Math.floor((curricular.filter((subject) => statusInfo(subject.status).approved).length / curricular.length) * 100) : 0,
     electiveCredits: approved.filter((subject) => subject.elective).reduce((sum, subject) => sum + (subject.credits ?? 0), 0),
     // Promedio de las notas finales de todas las aprobadas (curriculares y electivas).
     average: grades.length ? grades.reduce((sum, grade) => sum + grade, 0) / grades.length : null,
