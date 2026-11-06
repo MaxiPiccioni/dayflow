@@ -247,3 +247,5 @@ Cambiar los "buscar o crear" a un upsert o a manejo de `IntegrityError` con rein
 - [ ] Fase 4: `main.py` y `page.js` modularizados
 - [ ] Fase 5: carga inicial con pocos requests, paginación
 - [ ] Fase 6: README y documentación
+
+> Estado actual y pendientes ordenados: ver `ESTADO.md`. Fase 3 se divide en 3-A (hecha), 3-B fechas/UTC, 3-C dinero, 3-D constraints+Postgres, 3-E categorías FK, 3-F ahorros. Facultad partes 1–3 hechas.
