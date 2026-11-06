@@ -58,7 +58,7 @@ export function RequirementPicker({ label, candidates, selected, onChange, disab
             className={`${inputClass} mt-1`}
           />
           {open && (
-            <div id={listId} role="listbox" aria-multiselectable="true" aria-label={label} className="absolute left-0 right-0 z-10 mt-1 max-h-60 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            <div id={listId} role="listbox" aria-multiselectable="true" aria-label={label} className="scrollbar-thin absolute left-0 right-0 z-10 mt-1 max-h-60 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
               {visible.length === 0 && <p className="px-3 py-2 text-xs text-zinc-400">No hay materias que coincidan.</p>}
               {levels.map((level) => (
                 <div key={level}>
