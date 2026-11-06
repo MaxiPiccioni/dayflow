@@ -182,7 +182,8 @@ export function SubjectForm({ subject, subjects, defaultLevel, onSave, onCancel 
         )}
       </fieldset>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-3">
+        <p className="text-xs text-zinc-500">Correlativas para cursarla</p>
         <RequirementPicker label="Necesita tener aprobada" candidates={candidates} selected={form.requiresAprobada} onChange={setRequiresAprobada} />
         <RequirementPicker label="Necesita haber cursado" candidates={candidates} selected={form.requiresCursada} onChange={(ids) => update("requiresCursada", ids)} disabled={includedInAprobada} />
       </div>
