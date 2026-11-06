@@ -7,6 +7,7 @@ import { DriveLink } from "@/components/faculty/drive-link";
 import { FolderView } from "@/components/faculty/folder-view";
 import { NotesEditor } from "@/components/faculty/notes-editor";
 import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
+import { StudySummary } from "@/components/faculty/study-summary";
 import { SubjectRequirements } from "@/components/faculty/subject-requirements";
 import { api } from "@/lib/api";
 import { allowsGrade, formatGrade, inputClass, levelLabel, planSummary, STATUS, STATUS_KEYS } from "@/lib/faculty";
@@ -15,7 +16,7 @@ const smallButton = "grid h-7 w-7 place-items-center rounded-lg text-zinc-400 ho
 
 // Detalle de una materia dentro del panel. Cada cambio va al backend y onChange recibe la materia actualizada.
 // onOpen abre el detalle de otra materia (desde las correlativas); onNotesSaved aplica las anotaciones guardadas.
-export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved }) {
+export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved, study }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [gradeDraft, setGradeDraft] = useState(null);
@@ -126,6 +127,8 @@ export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onO
         {notice && <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">{notice}</p>}
         {error && <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>}
       </Card>
+
+      <StudySummary study={study} />
 
       <Card>
         <NotesEditor key={subject.id} subjectId={subject.id} initialNotes={subject.notes} onSaved={(notes) => onNotesSaved(subject.id, notes)} />
