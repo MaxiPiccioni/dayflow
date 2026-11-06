@@ -80,12 +80,32 @@ def _setup_subject(client, db, a):
     assert response.status_code == 201, response.text
     subject = response.json()
     folder_ids = [folder["id"] for folder in subject["folders"]]
-    return {"id": subject["id"], "folder_id": folder_ids[0], "folder_ids": folder_ids, "reversed_folder_ids": list(reversed(folder_ids))}
+    # Dos links en la primera carpeta para probar editar, borrar y ordenar.
+    for title in ("Uno", "Dos"):
+        link_response = client.post(f"/api/faculty/folders/{folder_ids[0]}/links", json={"title": title, "url": "https://example.com/" + title}, headers=a)
+        assert link_response.status_code == 201, link_response.text
+    link_ids = [link["id"] for link in link_response.json()["folders"][0]["links"]]
+    return {
+        "id": subject["id"],
+        "folder_id": folder_ids[0],
+        "folder_ids": folder_ids,
+        "reversed_folder_ids": list(reversed(folder_ids)),
+        "link_id": link_ids[0],
+        "link_ids": link_ids,
+        "reversed_link_ids": list(reversed(link_ids)),
+    }
 
 
 def _subject_exists(client, a, ctx):
     subjects = client.get("/api/faculty/subjects", headers=a).json()
-    return [(s["id"], s["name"], s["status"], s["grade"], [f["id"] for f in s["folders"]]) for s in subjects] == [(ctx["id"], MARK, "aprobada", 8, ctx["folder_ids"])]
+    own = [s for s in subjects if s["id"] == ctx["id"]]
+    def folder_snapshot(folder):
+        return (folder["id"], folder["drive_url"], [(link["id"], link["title"], link["url"]) for link in folder["links"]])
+
+    snapshot = [(s["name"], s["status"], s["grade"], s["notes"], s["drive_url"], [folder_snapshot(f) for f in s["folders"]]) for s in own]
+    links = [(ctx["link_ids"][0], "Uno", "https://example.com/Uno"), (ctx["link_ids"][1], "Dos", "https://example.com/Dos")]
+    folders = [(folder_id, None, links if folder_id == ctx["folder_id"] else []) for folder_id in ctx["folder_ids"]]
+    return snapshot == [(MARK, "aprobada", 8, "", None, folders)]
 
 
 def _task_exists(client, a, ctx):
@@ -174,6 +194,28 @@ RESOURCES = [
         ],
         _subject_exists,
     ),
+    ("subject requirements", _setup_subject, [("PATCH", "/api/faculty/subjects/{id}", {"requires_cursada": [], "requires_aprobada": []})], _subject_exists),
+    (
+        "drive links",
+        _setup_subject,
+        [
+            ("PATCH", "/api/faculty/subjects/{id}", {"drive_url": "https://hackeado.example.com"}),
+            ("PATCH", "/api/faculty/folders/{folder_id}", {"drive_url": "https://hackeado.example.com"}),
+        ],
+        _subject_exists,
+    ),
+    (
+        "folder links",
+        _setup_subject,
+        [
+            ("POST", "/api/faculty/folders/{folder_id}/links", {"title": "hackeado", "url": "https://hackeado.example.com"}),
+            ("PUT", "/api/faculty/folders/{folder_id}/links/order", {"ids": "{reversed_link_ids}"}),
+            ("PATCH", "/api/faculty/links/{link_id}", {"title": "hackeado"}),
+            ("DELETE", "/api/faculty/links/{link_id}", None),
+        ],
+        _subject_exists,
+    ),
+    ("subject notes", _setup_subject, [("PATCH", "/api/faculty/subjects/{id}/notes", {"notes": "hackeada"})], _subject_exists),
     (
         "subject folders",
         _setup_subject,
@@ -222,6 +264,32 @@ def test_own_folder_order_cannot_include_foreign_folders(client, db, users):
     own = client.post("/api/faculty/subjects", json={"name": "De B", "level": 1}, headers=b).json()
     own_ids = [folder["id"] for folder in own["folders"]]
     response = client.put(f"/api/faculty/subjects/{own['id']}/folders/order", json={"ids": [*own_ids, ctx_a["folder_id"]]}, headers=b)
+    assert response.status_code == 400
+    assert _subject_exists(client, a, ctx_a)
+
+
+def test_other_user_cannot_use_foreign_subjects_as_requirements(client, db, users):
+    a, b = users
+    ctx_a = _setup_subject(client, db, a)
+    own = client.post("/api/faculty/subjects", json={"name": "De B", "level": 2}, headers=b).json()
+    for method, path, body in (
+        ("POST", "/api/faculty/subjects", {"name": "Otra de B", "level": 2, "requires_aprobada": [ctx_a["id"]]}),
+        ("PATCH", f"/api/faculty/subjects/{own['id']}", {"requires_cursada": [ctx_a["id"]]}),
+    ):
+        response = client.request(method, path, json=body, headers=b)
+        assert (response.status_code, response.json()["detail"]) == (422, "Correlativa inválida")
+    subject_a = client.get("/api/faculty/subjects", headers=a).json()[0]
+    assert subject_a["required_by"] == []
+    assert [s["name"] for s in client.get("/api/faculty/subjects", headers=b).json()] == ["De B"]
+
+
+def test_own_link_order_cannot_include_foreign_links(client, db, users):
+    a, b = users
+    ctx_a = _setup_subject(client, db, a)
+    own = client.post("/api/faculty/subjects", json={"name": "De B", "level": 1}, headers=b).json()
+    own_folder = own["folders"][0]["id"]
+    own_link = client.post(f"/api/faculty/folders/{own_folder}/links", json={"title": "Mío", "url": "https://example.com/b"}, headers=b).json()["folders"][0]["links"][0]["id"]
+    response = client.put(f"/api/faculty/folders/{own_folder}/links/order", json={"ids": [own_link, *ctx_a["link_ids"]]}, headers=b)
     assert response.status_code == 400
     assert _subject_exists(client, a, ctx_a)
 

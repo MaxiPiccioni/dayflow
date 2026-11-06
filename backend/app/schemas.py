@@ -1,8 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
 from pydantic_core import PydanticCustomError
 
 
@@ -317,13 +318,46 @@ GRADE_REQUIRES_APPROVAL = "Solo las materias aprobadas pueden tener nota final"
 
 SubjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 FolderName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
-SubjectLevel = Annotated[int, Field(ge=1, le=8)]
+# La carrera tiene 5 años.
+SubjectLevel = Annotated[int, Field(ge=1, le=5)]
 SubjectGrade = Annotated[Decimal, Field(ge=1, le=10, max_digits=4, decimal_places=2)]
+SubjectCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10)]
+SubjectModality = Literal["A", "1C", "2C", "1C-2C", "2C-1C"]
+SubjectCredits = Annotated[int, Field(ge=1, le=20)]
+SubjectWeeklyHours = Annotated[int, Field(ge=1, le=20)]
+RequirementKind = Literal["cursada", "aprobada"]
+ELECTIVE_NEEDS_CREDITS = "Las electivas tienen que tener créditos"
+NOTES_MAX_LENGTH = 5000
+INVALID_LINK = "El link tiene que empezar con http:// o https://"
+
+
+def validate_link_url(value: str) -> str:
+    """Único validador de links de Facultad: solo http/https, con host y sin espacios.
+
+    Rechaza javascript:, data: y cualquier otro esquema, que al abrirse podrían ejecutar código.
+    """
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+    except ValueError:
+        host = None
+        parts = None
+    if parts is None or parts.scheme.lower() not in ("http", "https") or not host or any(char.isspace() for char in value):
+        raise PydanticCustomError("invalid_link", INVALID_LINK)
+    return value
+
+
+LinkUrl = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000), AfterValidator(validate_link_url)]
+LinkTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 
 
 def grade_requires_approval_error() -> PydanticCustomError:
     # Error propio para que el 422 traiga el mensaje tal cual, sin el prefijo "Value error, ".
     return PydanticCustomError("grade_requires_approval", GRADE_REQUIRES_APPROVAL)
+
+
+def elective_needs_credits_error() -> PydanticCustomError:
+    return PydanticCustomError("elective_needs_credits", ELECTIVE_NEEDS_CREDITS)
 
 
 class SubjectCreate(BaseModel):
@@ -334,11 +368,27 @@ class SubjectCreate(BaseModel):
     icon: str = Field(default="book", min_length=1, max_length=40)
     color: str = Field(default="lime", min_length=1, max_length=20)
     position: int | None = Field(default=None, ge=0)
+    code: SubjectCode | None = None
+    elective: bool = False
+    credits: SubjectCredits | None = None
+    modality: SubjectModality | None = None
+    weekly_hours: SubjectWeeklyHours | None = None
+    # Correlativas para cursar esta materia (ids de materias del usuario).
+    requires_aprobada: list[int] = []
+    requires_cursada: list[int] = []
 
     @model_validator(mode="after")
     def grade_only_when_approved(self) -> "SubjectCreate":
         if self.grade is not None and self.status not in GRADED_SUBJECT_STATUSES:
             raise grade_requires_approval_error()
+        return self
+
+    @model_validator(mode="after")
+    def credits_only_for_electives(self) -> "SubjectCreate":
+        if self.elective and self.credits is None:
+            raise elective_needs_credits_error()
+        if not self.elective:
+            self.credits = None
         return self
 
 
@@ -349,14 +399,33 @@ class SubjectUpdate(BaseModel):
     grade: SubjectGrade | None = None
     icon: str | None = Field(default=None, min_length=1, max_length=40)
     color: str | None = Field(default=None, min_length=1, max_length=20)
+    code: SubjectCode | None = None
+    elective: bool | None = None
+    credits: SubjectCredits | None = None
+    modality: SubjectModality | None = None
+    weekly_hours: SubjectWeeklyHours | None = None
+    # Link a la carpeta de Drive de la materia; null lo borra.
+    drive_url: LinkUrl | None = None
+    # Si viene una lista, reemplaza las correlativas de ese tipo; si no viene, no se tocan.
+    requires_aprobada: list[int] | None = None
+    requires_cursada: list[int] | None = None
 
     @model_validator(mode="after")
     def no_null_for_required_fields(self) -> "SubjectUpdate":
-        # Solo grade se puede mandar en null (para borrar la nota); el resto se omite si no cambia.
-        for field in ("name", "level", "status", "icon", "color"):
+        # grade, code, credits, modality, weekly_hours y drive_url se pueden mandar en null para borrarlos;
+        # el resto se omite si no cambia.
+        for field in ("name", "level", "status", "icon", "color", "elective", "requires_aprobada", "requires_cursada"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise PydanticCustomError("not_nullable", "{field} no puede ser null", {"field": field})
         return self
+
+
+class FolderLinkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    url: str
+    position: int
 
 
 class SubjectFolderOut(BaseModel):
@@ -364,6 +433,14 @@ class SubjectFolderOut(BaseModel):
     id: int
     name: str
     position: int
+    drive_url: str | None
+    links: list[FolderLinkOut]
+
+
+class MissingRequirement(BaseModel):
+    id: int
+    name: str
+    kind: RequirementKind
 
 
 class SubjectOut(BaseModel):
@@ -378,6 +455,20 @@ class SubjectOut(BaseModel):
     position: int
     created_at: datetime
     folders: list[SubjectFolderOut]
+    code: str | None
+    elective: bool
+    credits: int | None
+    modality: SubjectModality | None
+    weekly_hours: int | None
+    notes: str
+    drive_url: str | None
+    requires_aprobada: list[int]
+    requires_cursada: list[int]
+    # Materias que tienen a esta como correlativa.
+    required_by: list[int]
+    # Disponibilidad para cursar, calculada en el servidor: available es true si no falta nada.
+    available: bool
+    missing: list[MissingRequirement]
 
 
 class SubjectOrder(BaseModel):
@@ -391,3 +482,45 @@ class SubjectFolderCreate(BaseModel):
 
 class SubjectFolderOrder(BaseModel):
     ids: list[int]
+
+
+class SubjectFolderUpdate(BaseModel):
+    name: FolderName | None = None
+    # Link a la carpeta de Drive de esta parte; null lo borra.
+    drive_url: LinkUrl | None = None
+
+    @model_validator(mode="after")
+    def name_not_null(self) -> "SubjectFolderUpdate":
+        if "name" in self.model_fields_set and self.name is None:
+            raise PydanticCustomError("not_nullable", "name no puede ser null")
+        return self
+
+
+class FolderLinkCreate(BaseModel):
+    title: LinkTitle
+    url: LinkUrl
+
+
+class FolderLinkUpdate(BaseModel):
+    title: LinkTitle | None = None
+    url: LinkUrl | None = None
+
+    @model_validator(mode="after")
+    def no_null_fields(self) -> "FolderLinkUpdate":
+        for field in ("title", "url"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise PydanticCustomError("not_nullable", "{field} no puede ser null", {"field": field})
+        return self
+
+
+class FolderLinkOrder(BaseModel):
+    ids: list[int]
+
+
+class SubjectNotesUpdate(BaseModel):
+    notes: str = Field(max_length=NOTES_MAX_LENGTH)
+
+
+class SubjectNotesOut(BaseModel):
+    notes: str
+    updated_at: datetime

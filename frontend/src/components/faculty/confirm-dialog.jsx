@@ -14,7 +14,7 @@ export function ConfirmDialog({ title, message, confirmLabel = "Eliminar", onCon
   };
   return (
     <div className="modal-overlay" onMouseDown={onCancel}>
-      <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="faculty-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="modal-panel scrollbar-thin" role="dialog" aria-modal="true" aria-labelledby="faculty-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
         <h2 id="faculty-confirm-title" className="text-xl font-semibold">{title}</h2>
         <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">{message}</p>
         {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}

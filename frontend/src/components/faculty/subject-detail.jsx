@@ -1,17 +1,21 @@
 import { useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronUp, Folder, FolderOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Folder, HardDrive, Pencil, Plus, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/faculty/confirm-dialog";
+import { DriveLink } from "@/components/faculty/drive-link";
+import { FolderView } from "@/components/faculty/folder-view";
+import { NotesEditor } from "@/components/faculty/notes-editor";
 import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
-import { inputClass } from "@/components/faculty/subject-form";
+import { SubjectRequirements } from "@/components/faculty/subject-requirements";
 import { api } from "@/lib/api";
-import { allowsGrade, formatGrade, levelLabel, STATUS, STATUS_KEYS } from "@/lib/faculty";
+import { allowsGrade, formatGrade, inputClass, levelLabel, planSummary, STATUS, STATUS_KEYS } from "@/lib/faculty";
 
 const smallButton = "grid h-7 w-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
 // Detalle de una materia dentro del panel. Cada cambio va al backend y onChange recibe la materia actualizada.
-export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
+// onOpen abre el detalle de otra materia (desde las correlativas); onNotesSaved aplica las anotaciones guardadas.
+export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [gradeDraft, setGradeDraft] = useState(null);
@@ -41,6 +45,9 @@ export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
     if (grade === subject.grade) { setGradeDraft(null); return; }
     run(api(`/faculty/subjects/${subject.id}`, { method: "PATCH", body: JSON.stringify({ grade }) }), () => setGradeDraft(null));
   };
+
+  // El link de Drive de la materia: la promesa vuelve al formulario del link, que muestra el error si falla.
+  const saveSubjectDrive = (url) => api(`/faculty/subjects/${subject.id}`, { method: "PATCH", body: JSON.stringify({ drive_url: url }) }).then(onChange);
 
   const addFolder = (event) => {
     event.preventDefault();
@@ -81,7 +88,9 @@ export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{levelLabel(subject.level)}</p>
             <h2 className="mt-1 break-words text-xl font-semibold text-zinc-950 dark:text-zinc-100">{subject.name}</h2>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{planSummary(subject)}</p>
             <div className="mt-1"><StatusBadge status={subject.status} /></div>
+            <div className="mt-3"><DriveLink url={subject.drive_url} onSave={saveSubjectDrive} label="materia" /></div>
           </div>
           <div className="grid gap-3 sm:w-64">
             <label className="block text-xs text-zinc-500">
@@ -119,15 +128,16 @@ export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
       </Card>
 
       <Card>
+        <NotesEditor key={subject.id} subjectId={subject.id} initialNotes={subject.notes} onSaved={(notes) => onNotesSaved(subject.id, notes)} />
+      </Card>
+
+      <Card className="space-y-6">
+        <SubjectRequirements subject={subject} subjects={subjects} onOpen={onOpen} />
+      </Card>
+
+      <Card>
         {openFolder ? (
-          <div>
-            <button type="button" onClick={() => setOpenFolderId(null)} className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"><ArrowLeft size={14} /> Carpetas</button>
-            <div className="mt-6 flex flex-col items-center gap-3 py-10 text-center">
-              <FolderOpen size={40} className="text-zinc-300 dark:text-zinc-600" />
-              <p className="text-sm font-semibold uppercase tracking-wide">{openFolder.name}</p>
-              <p className="text-sm text-zinc-400">Esta carpeta todavía no tiene contenido</p>
-            </div>
-          </div>
+          <FolderView subject={subject} folder={openFolder} onBack={() => setOpenFolderId(null)} onChange={onChange} />
         ) : (
           <>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -153,9 +163,11 @@ export function SubjectDetail({ subject, onBack, onEdit, onChange }) {
                         </div>
                       </form>
                     ) : (
-                      <button type="button" onClick={() => setOpenFolderId(folder.id)} className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl text-center hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+                      <button type="button" onClick={() => setOpenFolderId(folder.id)} className="relative flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl text-center hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+                        {folder.drive_url && <HardDrive size={14} aria-label="Tiene link de Drive" className="absolute right-2 top-2 text-zinc-400" />}
                         <Folder size={40} strokeWidth={1.5} className="text-lime-600 dark:text-lime-400" />
                         <span className="line-clamp-2 break-words px-1 text-xs font-semibold uppercase tracking-wide">{folder.name}</span>
+                        <span className="text-[11px] text-zinc-400">{folder.links.length === 1 ? "1 archivo" : `${folder.links.length} archivos`}</span>
                       </button>
                     )}
                     <div className="mt-1 flex justify-center gap-0.5">

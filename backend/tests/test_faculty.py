@@ -1,6 +1,6 @@
 import pytest
 
-from app.models import Subject, SubjectFolder
+from app.models import FolderLink, Subject, SubjectFolder, SubjectRequirement
 
 GRADE_ERROR = "Solo las materias aprobadas pueden tener nota final"
 DEFAULT_FOLDERS = ["FINAL", "PRÁCTICO", "TEÓRICO", "TPS"]
@@ -91,13 +91,14 @@ def test_delete_subject_removes_its_folders(client, db, user):
     "payload",
     [
         {"name": "X", "level": 0},
+        {"name": "X", "level": 6},
         {"name": "X", "level": 9},
         {"name": "X", "level": 1, "status": "aprobado"},
         {"name": "   ", "level": 1},
         {"name": "X", "level": 1, "grade": 11, "status": "aprobada"},
         {"name": "X", "level": 1, "grade": 0.5, "status": "aprobada"},
     ],
-    ids=["level-0", "level-9", "bad-status", "blank-name", "grade-11", "grade-below-1"],
+    ids=["level-0", "level-6", "level-9", "bad-status", "blank-name", "grade-11", "grade-below-1"],
 )
 def test_create_validation(client, user, payload):
     assert client.post("/api/faculty/subjects", json=payload, headers=user).status_code == 422
@@ -105,7 +106,8 @@ def test_create_validation(client, user, payload):
 
 def test_update_validation(client, user):
     subject = create_subject(client, user)
-    assert patch_subject(client, user, subject["id"], level=9).status_code == 422
+    assert patch_subject(client, user, subject["id"], level=6).status_code == 422
+    assert patch_subject(client, user, subject["id"], level=5).json()["level"] == 5
     assert patch_subject(client, user, subject["id"], status="otro").status_code == 422
 
 
@@ -291,3 +293,388 @@ def test_subject_rows_store_decimal_grade_and_utc_created_at(client, db, user):
     row = db.get(Subject, subject["id"])
     assert str(row.grade) == "7.75"
     assert row.created_at is not None
+
+
+# --- Parte 2: datos del plan ---
+
+ELECTIVE_ERROR = "Las electivas tienen que tener créditos"
+
+
+def test_create_with_plan_data(client, user):
+    subject = create_subject(client, user, code=" 19 ", modality="1C-2C", weekly_hours=6, elective=True, credits=3)
+    assert {key: subject[key] for key in ("code", "modality", "weekly_hours", "elective", "credits", "notes")} == {
+        "code": "19",
+        "modality": "1C-2C",
+        "weekly_hours": 6,
+        "elective": True,
+        "credits": 3,
+        "notes": "",
+    }
+    plain = create_subject(client, user, name="Otra")
+    assert (plain["code"], plain["elective"], plain["credits"], plain["modality"], plain["weekly_hours"]) == (None, False, None, None, None)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"elective": True, "credits": 0},
+        {"elective": True, "credits": 21},
+        {"weekly_hours": 0},
+        {"weekly_hours": 21},
+        {"modality": "3C"},
+        {"code": "x" * 11},
+        {"code": "   "},
+    ],
+    ids=["credits-0", "credits-21", "hours-0", "hours-21", "bad-modality", "long-code", "blank-code"],
+)
+def test_plan_data_validation(client, user, fields):
+    assert client.post("/api/faculty/subjects", json={"name": "X", "level": 1, **fields}, headers=user).status_code == 422
+
+
+@pytest.mark.parametrize("modality", ["A", "1C", "2C", "1C-2C", "2C-1C"])
+def test_all_modalities_are_accepted(client, user, modality):
+    assert create_subject(client, user, modality=modality)["modality"] == modality
+
+
+def test_elective_needs_credits_and_non_elective_drops_them(client, user):
+    response = client.post("/api/faculty/subjects", json={"name": "X", "level": 1, "elective": True}, headers=user)
+    assert response.status_code == 422
+    assert error_message(response) == ELECTIVE_ERROR
+    assert create_subject(client, user, credits=5)["credits"] is None
+
+
+def test_patch_elective_and_credits_against_resulting_state(client, user):
+    elective = create_subject(client, user, elective=True, credits=4)
+    assert patch_subject(client, user, elective["id"], credits=6).json()["credits"] == 6
+    response = patch_subject(client, user, elective["id"], credits=None)
+    assert (response.status_code, error_message(response)) == (422, ELECTIVE_ERROR)
+    body = patch_subject(client, user, elective["id"], elective=False).json()
+    assert (body["elective"], body["credits"]) == (False, None)
+
+    curricular = create_subject(client, user, name="Curricular")
+    response = patch_subject(client, user, curricular["id"], elective=True)
+    assert (response.status_code, error_message(response)) == (422, ELECTIVE_ERROR)
+    assert patch_subject(client, user, curricular["id"], credits=3).json()["credits"] is None
+    body = patch_subject(client, user, curricular["id"], elective=True, credits=2).json()
+    assert (body["elective"], body["credits"]) == (True, 2)
+    assert patch_subject(client, user, curricular["id"], elective=None).status_code == 422
+
+
+def test_code_is_unique_per_user_and_nulls_do_not_clash(client, user, make_user):
+    first = create_subject(client, user, code="19")
+    create_subject(client, user, name="Sin código 1")
+    create_subject(client, user, name="Sin código 2")
+    response = client.post("/api/faculty/subjects", json={"name": "Otra", "level": 1, "code": "19"}, headers=user)
+    assert (response.status_code, response.json()["detail"]) == (409, "Ya existe una materia con ese código")
+    other = create_subject(client, user, name="Otra", code="20")
+    assert patch_subject(client, user, other["id"], code=" 19").status_code == 409
+    assert patch_subject(client, user, first["id"], code="19").status_code == 200  # el propio código no choca
+    assert patch_subject(client, user, first["id"], code=None).json()["code"] is None
+    assert create_subject(client, make_user("otra@example.com"), code="20")["code"] == "20"
+
+
+def test_patch_modality_and_hours_can_be_cleared(client, user):
+    subject = create_subject(client, user, modality="A", weekly_hours=4)
+    body = patch_subject(client, user, subject["id"], modality=None, weekly_hours=None).json()
+    assert (body["modality"], body["weekly_hours"]) == (None, None)
+
+
+# --- Parte 2: correlativas ---
+
+
+def by_id(client, user) -> dict[int, dict]:
+    return {subject["id"]: subject for subject in list_subjects(client, user)}
+
+
+def test_create_with_both_requirement_lists(client, user):
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B")
+    c = create_subject(client, user, name="C", level=2, requires_aprobada=[a["id"]], requires_cursada=[b["id"]])
+    assert (c["requires_aprobada"], c["requires_cursada"], c["required_by"]) == ([a["id"]], [b["id"]], [])
+    subjects = by_id(client, user)
+    assert subjects[a["id"]]["required_by"] == [c["id"]]
+    assert subjects[b["id"]]["required_by"] == [c["id"]]
+
+
+def test_id_in_both_lists_stays_as_aprobada(client, user):
+    a = create_subject(client, user, name="A")
+    c = create_subject(client, user, name="C", requires_aprobada=[a["id"]], requires_cursada=[a["id"], a["id"]])
+    assert (c["requires_aprobada"], c["requires_cursada"]) == ([a["id"]], [])
+
+
+def test_self_requirement_is_rejected(client, user):
+    a = create_subject(client, user, name="A")
+    response = patch_subject(client, user, a["id"], requires_cursada=[a["id"]])
+    assert (response.status_code, response.json()["detail"]) == (422, "Una materia no puede ser correlativa de sí misma")
+
+
+def test_direct_and_indirect_cycles_are_rejected(client, user):
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B", requires_cursada=[a["id"]])
+    c = create_subject(client, user, name="C", requires_aprobada=[b["id"]])
+    # Directo: B requiere A, A no puede requerir B. Indirecto: C -> B -> A, A no puede requerir C.
+    for payload in ({"requires_aprobada": [b["id"]]}, {"requires_cursada": [c["id"]]}):
+        response = patch_subject(client, user, a["id"], **payload)
+        assert (response.status_code, response.json()["detail"]) == (422, "Esa correlativa genera un ciclo")
+    assert (by_id(client, user)[a["id"]]["requires_aprobada"], by_id(client, user)[a["id"]]["requires_cursada"]) == ([], [])
+
+
+def test_shared_requirement_is_not_a_cycle(client, user):
+    # Diamante: B y C requieren A, y D requiere B y C. Que E requiera D no es un ciclo.
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B", requires_cursada=[a["id"]])
+    c = create_subject(client, user, name="C", requires_cursada=[a["id"]])
+    d = create_subject(client, user, name="D", requires_aprobada=[b["id"], c["id"]])
+    e = create_subject(client, user, name="E")
+    assert patch_subject(client, user, e["id"], requires_cursada=[d["id"]]).json()["requires_cursada"] == [d["id"]]
+
+
+def test_foreign_or_missing_requirement_is_invalid(client, user, make_user):
+    foreign = create_subject(client, make_user("otra@example.com"), name="Ajena")
+    for required in (foreign["id"], 999):
+        response = client.post("/api/faculty/subjects", json={"name": "X", "level": 1, "requires_cursada": [required]}, headers=user)
+        assert (response.status_code, response.json()["detail"]) == (422, "Correlativa inválida")
+    assert list_subjects(client, user) == []
+
+
+def test_patch_replaces_given_lists_and_keeps_omitted_ones(client, user):
+    a = create_subject(client, user, name="A")
+    b = create_subject(client, user, name="B")
+    c = create_subject(client, user, name="C")
+    target = create_subject(client, user, name="T", requires_aprobada=[a["id"]], requires_cursada=[b["id"]])
+    body = patch_subject(client, user, target["id"], requires_cursada=[c["id"]]).json()
+    assert (body["requires_aprobada"], body["requires_cursada"]) == ([a["id"]], [c["id"]])
+    # Pasar una requerida de cursada a aprobada actualiza la fila existente.
+    body = patch_subject(client, user, target["id"], requires_aprobada=[a["id"], c["id"]]).json()
+    assert (body["requires_aprobada"], body["requires_cursada"]) == ([a["id"], c["id"]], [])
+    body = patch_subject(client, user, target["id"], requires_aprobada=[], name="T2").json()
+    assert (body["requires_aprobada"], body["requires_cursada"], body["name"]) == ([], [], "T2")
+    assert patch_subject(client, user, target["id"], requires_aprobada=None).status_code == 422
+
+
+# --- Parte 2: disponibilidad ---
+
+CURSADA_OK = {"regular", "promocion_practica", "promocion_teorica", "aprobacion_directa", "aprobada"}
+APROBADA_OK = {"aprobacion_directa", "aprobada"}
+ALL_STATUSES = ["por_cursar", "cursando", "regular", "promocion_practica", "promocion_teorica", "aprobacion_directa", "aprobada", "libre"]
+
+
+@pytest.mark.parametrize("kind", ["cursada", "aprobada"])
+@pytest.mark.parametrize("required_status", ALL_STATUSES)
+def test_availability_for_each_status_and_kind(client, user, kind, required_status):
+    required = create_subject(client, user, name="Requerida", status=required_status)
+    target = create_subject(client, user, name="Objetivo", level=2, **{f"requires_{kind}": [required["id"]]})
+    expected = required_status in (CURSADA_OK if kind == "cursada" else APROBADA_OK)
+    assert target["available"] is expected
+    assert target["missing"] == ([] if expected else [{"id": required["id"], "name": "Requerida", "kind": kind}])
+
+
+def test_missing_lists_exactly_what_is_missing_and_updates_with_status(client, user):
+    a = create_subject(client, user, name="Análisis", status="aprobada")
+    b = create_subject(client, user, name="Álgebra", status="regular")
+    c = create_subject(client, user, name="Física", status="cursando")
+    target = create_subject(client, user, name="Economía", level=3, requires_aprobada=[a["id"], b["id"]], requires_cursada=[c["id"]])
+    assert target["available"] is False
+    assert target["missing"] == [{"id": b["id"], "name": "Álgebra", "kind": "aprobada"}, {"id": c["id"], "name": "Física", "kind": "cursada"}]
+    patch_subject(client, user, b["id"], status="aprobacion_directa")
+    patch_subject(client, user, c["id"], status="promocion_teorica")
+    refreshed = by_id(client, user)[target["id"]]
+    assert (refreshed["available"], refreshed["missing"]) == (True, [])
+    assert create_subject(client, user, name="Sin correlativas")["available"] is True
+
+
+def test_deleting_a_subject_cleans_requirements_in_both_directions(client, db, user):
+    base = create_subject(client, user, name="Base", status="cursando")
+    middle = create_subject(client, user, name="Medio", level=2, requires_aprobada=[base["id"]])
+    top = create_subject(client, user, name="Final", level=3, requires_cursada=[middle["id"]])
+    assert top["available"] is False
+    assert client.delete(f"/api/faculty/subjects/{middle['id']}", headers=user).status_code == 204
+    subjects = by_id(client, user)
+    assert (subjects[top["id"]]["requires_cursada"], subjects[top["id"]]["available"], subjects[top["id"]]["missing"]) == ([], True, [])
+    assert subjects[base["id"]]["required_by"] == []
+    db.expire_all()
+    assert db.query(SubjectRequirement).count() == 0
+
+
+# --- Parte 2: anotaciones ---
+
+
+def test_notes_are_saved_and_returned(client, user):
+    subject = create_subject(client, user)
+    text = "Horario: martes 18 h\nhttps://campus.example.com/aula"
+    response = client.patch(f"/api/faculty/subjects/{subject['id']}/notes", json={"notes": text}, headers=user)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["notes"] == text and body["updated_at"]
+    assert list_subjects(client, user)[0]["notes"] == text
+
+
+def test_notes_length_limit_and_missing_subject(client, user):
+    subject = create_subject(client, user)
+    path = f"/api/faculty/subjects/{subject['id']}/notes"
+    assert client.patch(path, json={"notes": "x" * 5000}, headers=user).status_code == 200
+    assert client.patch(path, json={"notes": "x" * 5001}, headers=user).status_code == 422
+    assert client.patch("/api/faculty/subjects/999/notes", json={"notes": "x"}, headers=user).status_code == 404
+
+
+# --- Links de Drive y archivos de carpetas ---
+
+LINK_ERROR = "El link tiene que empezar con http:// o https://"
+DRIVE = "https://drive.google.com/drive/folders/abc123"
+INVALID_URLS = ["javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "ftp://archivos.example.com/x", "drive.google.com/x", "https://", "https://a b.com", "//example.com/x", "http://[::1"]
+
+
+def first_folder(subject: dict) -> dict:
+    return subject["folders"][0]
+
+
+def add_link(client, user, folder_id, title="Guía 1", url="https://docs.google.com/document/d/1"):
+    return client.post(f"/api/faculty/folders/{folder_id}/links", json={"title": title, "url": url}, headers=user)
+
+
+def link_titles(subject: dict, folder_index: int = 0) -> list[str]:
+    return [link["title"] for link in subject["folders"][folder_index]["links"]]
+
+
+def test_subject_and_folder_drive_url_crud(client, user):
+    subject = create_subject(client, user)
+    assert subject["drive_url"] is None and all(folder["drive_url"] is None and folder["links"] == [] for folder in subject["folders"])
+    body = patch_subject(client, user, subject["id"], drive_url=f"  {DRIVE}  ").json()
+    assert body["drive_url"] == DRIVE
+    folder_id = first_folder(body)["id"]
+    body = client.patch(f"/api/faculty/folders/{folder_id}", json={"drive_url": "http://example.com/practico"}, headers=user).json()
+    assert first_folder(body)["drive_url"] == "http://example.com/practico"
+    # Cambiar solo el nombre no toca el link, y null lo borra.
+    body = client.patch(f"/api/faculty/folders/{folder_id}", json={"name": "Final 1"}, headers=user).json()
+    assert (first_folder(body)["name"], first_folder(body)["drive_url"]) == ("Final 1", "http://example.com/practico")
+    assert first_folder(client.patch(f"/api/faculty/folders/{folder_id}", json={"drive_url": None}, headers=user).json())["drive_url"] is None
+    assert patch_subject(client, user, subject["id"], drive_url=None).json()["drive_url"] is None
+    assert client.patch(f"/api/faculty/folders/{folder_id}", json={"name": None}, headers=user).status_code == 422
+
+
+@pytest.mark.parametrize("url", INVALID_URLS)
+def test_invalid_urls_are_rejected_everywhere(client, db, user, url):
+    subject = create_subject(client, user)
+    folder_id = first_folder(subject)["id"]
+    responses = [
+        patch_subject(client, user, subject["id"], drive_url=url),
+        client.patch(f"/api/faculty/folders/{folder_id}", json={"drive_url": url}, headers=user),
+        add_link(client, user, folder_id, url=url),
+    ]
+    for response in responses:
+        assert response.status_code == 422
+        assert error_message(response) == LINK_ERROR
+    db.expire_all()
+    assert db.query(FolderLink).count() == 0
+    assert db.get(Subject, subject["id"]).drive_url is None
+
+
+@pytest.mark.parametrize("url", ["https://drive.google.com/file/d/1/view", "http://example.com", "HTTPS://Example.com/Path?x=1#y", "https://a.b/" + "x" * 100])
+def test_valid_urls_are_accepted(client, user, url):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    assert add_link(client, user, folder_id, url=url).status_code == 201
+
+
+def test_url_length_limit(client, user):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    assert add_link(client, user, folder_id, url="https://a.com/" + "x" * 1985).status_code == 201
+    assert add_link(client, user, folder_id, url="https://a.com/" + "x" * 1990).status_code == 422
+
+
+def test_link_crud_and_order_of_creation(client, user):
+    subject = create_subject(client, user)
+    folder_id = first_folder(subject)["id"]
+    for title in ("Primero", "Segundo", "Tercero"):
+        body = add_link(client, user, folder_id, title=f" {title} ").json()
+    assert link_titles(body) == ["Primero", "Segundo", "Tercero"]
+    assert [link["position"] for link in body["folders"][0]["links"]] == [0, 1, 2]
+    assert all(folder["links"] == [] for folder in body["folders"][1:])
+
+    link_id = body["folders"][0]["links"][1]["id"]
+    body = client.patch(f"/api/faculty/links/{link_id}", json={"title": "Editado", "url": "https://example.com/nuevo"}, headers=user).json()
+    edited = body["folders"][0]["links"][1]
+    assert (edited["title"], edited["url"]) == ("Editado", "https://example.com/nuevo")
+    body = client.patch(f"/api/faculty/links/{link_id}", json={"title": "Solo título"}, headers=user).json()
+    assert body["folders"][0]["links"][1]["url"] == "https://example.com/nuevo"
+    for bad in ({"title": None}, {"url": None}, {"title": "  "}, {"url": "javascript:alert(1)"}):
+        assert client.patch(f"/api/faculty/links/{link_id}", json=bad, headers=user).status_code == 422
+
+    assert client.delete(f"/api/faculty/links/{link_id}", headers=user).status_code == 204
+    assert link_titles(list_subjects(client, user)[0]) == ["Primero", "Tercero"]
+    assert client.delete(f"/api/faculty/links/{link_id}", headers=user).status_code == 404
+    assert client.patch(f"/api/faculty/links/{link_id}", json={"title": "x"}, headers=user).status_code == 404
+    # Tras borrar, el siguiente link va al final.
+    assert link_titles(add_link(client, user, folder_id, title="Cuarto").json()) == ["Primero", "Tercero", "Cuarto"]
+
+
+def test_link_title_validation_and_missing_folder(client, user):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    assert client.post(f"/api/faculty/folders/{folder_id}/links", json={"title": "   ", "url": "https://a.com"}, headers=user).status_code == 422
+    assert client.post(f"/api/faculty/folders/{folder_id}/links", json={"title": "x" * 121, "url": "https://a.com"}, headers=user).status_code == 422
+    assert add_link(client, user, 999).status_code == 404
+
+
+def test_reorder_links_and_exact_ids(client, user):
+    folder_id = first_folder(create_subject(client, user))["id"]
+    other_folder_id = create_subject(client, user, name="Otra")["folders"][0]["id"]
+    for title in ("A", "B", "C"):
+        body = add_link(client, user, folder_id, title=title).json()
+    ids = [link["id"] for link in body["folders"][0]["links"]]
+    foreign = add_link(client, user, other_folder_id, title="Ajeno").json()["folders"][0]["links"][0]["id"]
+
+    response = client.put(f"/api/faculty/folders/{folder_id}/links/order", json={"ids": [ids[2], ids[0], ids[1]]}, headers=user)
+    assert response.status_code == 200
+    assert link_titles(response.json()) == ["C", "A", "B"]
+    assert link_titles(list_subjects(client, user)[0]) == ["C", "A", "B"]
+    for bad in (ids[:2], [*ids, foreign], [ids[0], ids[0], ids[1]], [*ids[:2], foreign]):
+        response = client.put(f"/api/faculty/folders/{folder_id}/links/order", json={"ids": bad}, headers=user)
+        assert (response.status_code, response.json()["detail"]) == (400, "Los ids no coinciden con los archivos de la carpeta")
+    assert client.put("/api/faculty/folders/999/links/order", json={"ids": []}, headers=user).status_code == 404
+
+
+def test_deleting_a_folder_deletes_its_links(client, db, user):
+    subject = create_subject(client, user)
+    folder_id = first_folder(subject)["id"]
+    other_id = subject["folders"][1]["id"]
+    add_link(client, user, folder_id)
+    add_link(client, user, other_id, title="Queda")
+    assert client.delete(f"/api/faculty/folders/{folder_id}", headers=user).status_code == 204
+    db.expire_all()
+    assert [link.title for link in db.query(FolderLink).all()] == ["Queda"]
+
+
+def test_deleting_a_subject_deletes_folders_and_links(client, db, user):
+    subject = create_subject(client, user, name="A borrar")
+    keep = create_subject(client, user, name="Queda")
+    for folder in subject["folders"][:2]:
+        add_link(client, user, folder["id"])
+    add_link(client, user, keep["folders"][0]["id"], title="Se conserva")
+    assert client.delete(f"/api/faculty/subjects/{subject['id']}", headers=user).status_code == 204
+    db.expire_all()
+    assert [link.title for link in db.query(FolderLink).all()] == ["Se conserva"]
+    assert db.query(SubjectFolder).count() == 4
+
+
+def test_list_does_not_query_per_folder(client, db, user):
+    # Dos materias con links: la cantidad de consultas del listado no crece con ellas.
+    from sqlalchemy import event
+
+    from app.database import engine
+
+    def count_queries() -> int:
+        statements = []
+        listener = lambda conn, cursor, statement, *args: statements.append(statement)  # noqa: E731
+        event.listen(engine, "before_cursor_execute", listener)
+        try:
+            assert client.get("/api/faculty/subjects", headers=user).status_code == 200
+        finally:
+            event.remove(engine, "before_cursor_execute", listener)
+        return len([statement for statement in statements if statement.lstrip().upper().startswith("SELECT")])
+
+    one = create_subject(client, user, name="Una")
+    add_link(client, user, one["folders"][0]["id"])
+    baseline = count_queries()
+    for index in range(3):
+        extra = create_subject(client, user, name=f"Extra {index}")
+        add_link(client, user, extra["folders"][0]["id"])
+    assert count_queries() == baseline
