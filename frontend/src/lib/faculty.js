@@ -155,6 +155,31 @@ export function planSummary(subject) {
   return parts.join(" · ");
 }
 
+// Mismo criterio que el backend (validate_link_url): solo http/https, con host y sin espacios.
+// Así un javascript: o data: nunca llega a un href.
+export const LINK_ERROR = "El link tiene que empezar con http:// o https://";
+export function isValidLinkUrl(value) {
+  const text = (value ?? "").trim();
+  if (!text || /\s/.test(text)) return false;
+  try {
+    const url = new URL(text);
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    // new URL lanza con texto que no es una URL: no es un link válido.
+    return false;
+  }
+}
+
+// Dominio para mostrar en gris ("drive.google.com"); si no se puede leer, el texto tal cual.
+export function linkDomain(value) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return value;
+  }
+}
+export const isGoogleDocsLink = (value) => ["docs.google.com", "drive.google.com"].includes(linkDomain(value));
+
 // Links http/https de un texto libre, sin repetir. Se sacan los signos de puntuación del final.
 export function findLinks(text) {
   const found = (text.match(/https?:\/\/[^\s<>"']+/g) ?? []).map((link) => link.replace(/[.,;:!?)\]]+$/, ""));
