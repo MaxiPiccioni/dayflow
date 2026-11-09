@@ -36,7 +36,7 @@ const Divider = () => <span aria-hidden="true" className="mx-0.5 my-0.5 h-px w-6
 
 // Barra de comandos del sandbox: angosta y a la izquierda (en celular, una fila de íconos con scroll propio). Los dos últimos
 // botones son Play/Stop (hace funcionar la máquina y la frena) y Pistas.
-export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive }) {
+export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive, tools = [], activeTool = null, onTool }) {
   const s = useSession();
   const [flyout, setFlyout] = useState(null);
   const fileRef = useRef(null);
@@ -107,6 +107,8 @@ export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive }) {
             onClick={act(s.playing ? s.stop : s.togglePlay, "ejecucion")}
           />
         )}
+        {!canvas && tools.map((t) => <Tool key={t.id} icon={t.icon} label={t.label} pressed={activeTool === t.id} onClick={() => onTool(t.id)} />)}
+        {!canvas && tools.length > 0 && <Divider />}
         <Tool icon={Lightbulb} label="Pistas del ejercicio" pressed={hintActive} onClick={onHint} className={hasHint ? "" : "opacity-70"} />
       </div>
 
