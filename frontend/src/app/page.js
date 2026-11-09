@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Flame, GraduationCap, LayoutDashboard, LogOut, Moon, MoreVertical, Pencil, Plus, Settings2, ShoppingCart, Sun, Timer, Trash2, Wallet, X } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -19,150 +19,15 @@ import { SubjectSearchSelect } from "@/components/subject-search-select";
 import { AuthGate } from "@/components/auth-gate";
 import { DatePicker } from "@/components/ui/date-picker";
 import { api } from "@/lib/api";
-
-function todayIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-const THEME_EVENT = "dayflow-theme-change";
-function subscribeTheme(callback) { window.addEventListener(THEME_EVENT, callback); return () => window.removeEventListener(THEME_EVENT, callback); }
-function getThemeSnapshot() { return localStorage.getItem("dayflow_theme") === "dark"; }
-function getThemeServerSnapshot() { return false; }
-function setStoredDark(value) { localStorage.setItem("dayflow_theme", value ? "dark" : "light"); window.dispatchEvent(new Event(THEME_EVENT)); }
-
-function shiftIsoDate(iso, deltaDays) {
-  const shifted = new Date(`${iso}T12:00:00`);
-  shifted.setDate(shifted.getDate() + deltaDays);
-  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}-${String(shifted.getDate()).padStart(2, "0")}`;
-}
-
-function daysUntil(iso) {
-  const today = new Date(`${todayIso()}T12:00:00`);
-  const target = new Date(`${iso}T12:00:00`);
-  return Math.round((target - today) / 86400000);
-}
-
-const WEEKDAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-function formatFullDate(iso) {
-  const d = new Date(`${iso}T12:00:00`);
-  return `${WEEKDAY_NAMES[d.getDay()]}, ${d.getDate()} de ${MONTH_NAMES[d.getMonth()].toLowerCase()} de ${d.getFullYear()}`;
-}
+import { daysUntil, formatFullDate, formatRowDate, monthLabel, monthSortValue, parseRowDate, shiftIsoDate, todayIso } from "@/lib/dates";
+import { fromApiClosedPeriod, fromApiEntry, fromApiEvent, fromApiHabit, fromApiHabitOverview, fromApiPayment, fromApiSaving, fromApiSavingMovement, fromApiSettings, fromApiTask, fromApiTransaction, toApiEntry, toApiEvent, toApiSaving, toApiSettings, toApiTask } from "@/lib/mappers";
+import { notifyPhaseChange, playAlarmSound, playClickSound } from "@/lib/sounds";
+import { quotes } from "@/lib/quotes";
+import { SUMMARY_LAYOUT_KEY, WIDGET_META, loadSummaryLayout } from "@/lib/summary-layout";
+import { setStoredDark, useDarkTheme } from "@/lib/theme";
 
 const tabs = [["resumen", "Resumen", LayoutDashboard], ["calendario", "Calendario", CalendarDays], ["pomodoro", "Pomodoro", Timer], ["hábitos", "Hábitos", Flame], ["horas", "Horas", Clock3], ["finanzas", "Finanzas", Wallet], ["compras", "Compras", ShoppingCart], ["facultad", "Facultad", GraduationCap]];
-const WIDGET_META = [
-  { id: "hero", label: "Tu día" },
-  { id: "calendar", label: "Calendario" },
-  { id: "agenda", label: "Tareas y eventos" },
-  { id: "pomodoro", label: "Pomodoro" },
-  { id: "habits", label: "Hábitos" },
-  { id: "horas", label: "Horas" },
-  { id: "finanzas", label: "Finanzas" },
-];
-const DEFAULT_SUMMARY_LAYOUT = [["hero", "pomodoro"], ["calendar", "agenda", "habits"]];
-const SUMMARY_LAYOUT_KEY = "dayflow_summary_layout";
-
-function loadSummaryLayout() {
-  if (typeof window === "undefined") return DEFAULT_SUMMARY_LAYOUT;
-  try {
-    const stored = JSON.parse(localStorage.getItem(SUMMARY_LAYOUT_KEY));
-    if (!Array.isArray(stored) || stored.length !== 2 || !stored.every(Array.isArray)) return DEFAULT_SUMMARY_LAYOUT;
-    const validIds = new Set(WIDGET_META.map((widget) => widget.id));
-    return stored.map((column) => column.filter((id) => validIds.has(id)));
-  } catch {
-    return DEFAULT_SUMMARY_LAYOUT;
-  }
-}
-const authors = ["Aristóteles", "Marie Curie", "Nikola Tesla", "Maya Angelou", "Peter Drucker", "Ada Lovelace", "Carl Sagan", "James Clear", "Eleanor Roosevelt", "Katherine Johnson"];
-const seeds = ["La constancia convierte una intención pequeña en una vida distinta.", "Cada bloque de atención es una inversión en tu futuro.", "El progreso no necesita ruido para estar ocurriendo.", "Una decisión clara hoy libera energía para mañana.", "La práctica paciente hace visible lo que antes parecía imposible."];
-const quotes = Array.from({ length: 500 }, (_, index) => ({ text: seeds[index % seeds.length], author: authors[index % authors.length] }));
 const inputClass = "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-lime-500 dark:border-zinc-700 dark:placeholder:text-zinc-500";
-
-let audioCtx = null;
-function getAudioContext() {
-  if (typeof window === "undefined") return null;
-  const Ctor = window.AudioContext || window.webkitAudioContext;
-  if (!Ctor) return null;
-  if (!audioCtx) audioCtx = new Ctor();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
-}
-
-function playClickSound() {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(480, now);
-  osc.frequency.exponentialRampToValueAtTime(260, now + 0.07);
-  const filter = ctx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = 1400;
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.45, now + 0.008);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-  osc.connect(filter).connect(gain).connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.12);
-}
-
-function playAlarmSound() {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const notes = [523.25, 659.25, 783.99];
-  const chimeSpan = notes.length * 0.22 + 1.1;
-  [0, 1].forEach((repeat) => {
-    const repeatStart = now + repeat * chimeSpan;
-    notes.forEach((freq, index) => {
-      const start = repeatStart + index * 0.22;
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(freq, start);
-      const partial = ctx.createOscillator();
-      partial.type = "sine";
-      partial.frequency.setValueAtTime(freq * 2, start);
-      const partialGain = ctx.createGain();
-      partialGain.gain.value = 0.16;
-      const envelope = ctx.createGain();
-      envelope.gain.setValueAtTime(0, start);
-      envelope.gain.linearRampToValueAtTime(0.55, start + 0.05);
-      envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
-      osc.connect(envelope);
-      partial.connect(partialGain).connect(envelope);
-      envelope.connect(ctx.destination);
-      osc.start(start);
-      partial.start(start);
-      osc.stop(start + 0.95);
-      partial.stop(start + 0.95);
-    });
-  });
-}
-
-function notifyPhaseChange(nextPhase) {
-  if (typeof document === "undefined" || document.visibilityState !== "hidden") return;
-  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-  try { new Notification(nextPhase === "work" ? "Terminó el descanso" : "¡Bien! Tomate un descanso", { body: "Pomodoro", tag: "pomodoro" }); } catch { /* Notification puede fallar en algunos navegadores, no es crítico */ }
-}
-
-const fromApiTask = (task) => ({ id: task.id, title: task.title, date: task.due_date, time: task.time, category: task.category, priority: task.priority, done: task.completed, notes: task.notes || "", subject_id: task.subject_id ?? "" });
-const toApiTask = (task) => ({ title: task.title, due_date: task.date, time: task.time, category: task.category || null, priority: task.priority || null, notes: task.notes || null, subject_id: task.subject_id ? Number(task.subject_id) : null, ...(task.repeat_days ? { repeat_days: task.repeat_days } : {}) });
-const fromApiHabit = (habit) => ({ id: habit.id, name: habit.name, target: habit.target, unit: habit.unit, count: habit.count, progress: habit.progress, streak: habit.streak, createdAt: habit.created_at });
-const fromApiHabitOverview = (item) => ({ date: item.log_date, completed: item.completed, total: item.total });
-const fromApiTransaction = (tx) => ({ id: tx.id, description: tx.description, amount: tx.amount, kind: tx.kind, category: tx.category, method: tx.method, createdAt: tx.created_at });
-const fromApiSaving = (saving) => ({ id: saving.id, name: saving.name, start: saving.start_amount, current: saving.current_amount, gain: saving.gain });
-const toApiSaving = (saving) => ({ name: saving.name, start_amount: saving.start });
-const fromApiSavingMovement = (movement) => ({ id: movement.id, amount: movement.amount, date: movement.movement_date });
-const fromApiEvent = (event) => ({ id: event.id, title: event.title, date: event.event_date, time: event.time, type: event.type, color: event.color, done: event.done, important: event.important });
-const toApiEvent = (event) => ({ title: event.title, event_date: event.date, time: event.time, type: event.type || null, color: event.color, important: event.important || false, ...(event.repeat_days ? { repeat_days: event.repeat_days } : {}) });
-const fromApiSettings = (settings) => ({ repetitions: settings.repetitions, work: settings.work, breakTime: settings.break_time });
-const toApiSettings = (settings) => ({ repetitions: settings.repetitions, work: settings.work, break_time: settings.breakTime });
-const fromApiEntry = (entry) => ({ id: entry.id, date: entry.entry_date, from: entry.from_time, to: entry.to_time, hours: entry.hours === null ? "" : entry.hours, extra: entry.extra, holiday: entry.holiday });
-const toApiEntry = (form) => ({ entry_date: form.date, from_time: form.from, to_time: form.to, hours: form.hours === "" || form.hours === undefined ? null : Number(form.hours), extra: form.extra, holiday: form.holiday });
-const fromApiPayment = (payment) => ({ id: payment.id, amount: payment.amount, method: payment.method, date: payment.payment_date });
-const fromApiClosedPeriod = (period) => ({ id: period.id, start: period.start, end: period.end, totalHours: period.total_hours, expected: period.expected, paid: period.paid, balance: period.balance });
 
 function DayModal({ date, tasks, events, openTask, openEvent, close }) { const dayTasks = tasks.filter((task) => task.date === date); const dayEvents = events.filter((event) => event.date === date); return <Modal title={`Agenda del ${date}`} close={close}><div className="mt-5 space-y-2">{dayTasks.length ? dayTasks.map((task) => <div key={`task-${task.id}`} onDoubleClick={() => { close(); openTask(task, date); }} className="cursor-pointer rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800"><span className="mr-3 text-xs text-zinc-400">{task.time}</span>{task.title}</div>) : null}{dayEvents.length ? dayEvents.map((event) => <div key={`event-${event.id}`} onDoubleClick={() => { close(); openEvent(event, date); }} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 text-sm" style={{ backgroundColor: `${event.color}55` }}><span className="h-6 w-1 rounded-full" style={{ backgroundColor: event.color }} /><span className="text-xs text-zinc-500">{event.time}</span><span className="flex-1">{event.title}</span></div>) : null}{!dayTasks.length && !dayEvents.length && <p className="py-4 text-sm text-zinc-500">No hay tareas ni eventos para este día.</p>}</div><div className="mt-6 flex gap-2"><button onClick={() => { close(); openTask(null, date); }} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white"><Plus size={16} /> Agregar tarea</button><button onClick={() => { close(); openEvent(null, date); }} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-zinc-200 py-3 text-sm font-semibold dark:border-zinc-700"><Plus size={16} /> Agregar evento</button></div></Modal>; }
 
@@ -761,8 +626,6 @@ function SavingsCard({ savings, openSaving, openMovements }) {
   );
 }
 
-function parseRowDate(value) { const [day, month, year] = value.split("/").map(Number); return new Date(year, month - 1, day).getTime(); }
-
 const ROW_SORTERS = {
   date: (row) => parseRowDate(row.date),
   type: (row) => row.type,
@@ -777,11 +640,6 @@ function SortableHead({ label, columnKey, sortKey, sortDir, onSort }) {
   const active = sortKey === columnKey;
   return <TableHead><button type="button" onClick={() => onSort(columnKey)} className="flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200">{label}{active ? sortDir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : <ArrowUpDown size={12} className="opacity-40" />}</button></TableHead>;
 }
-
-const MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-const monthLabel = (iso) => { const d = new Date(iso); return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`; };
-const monthSortValue = (iso) => { const d = new Date(iso); return d.getFullYear() * 12 + d.getMonth(); };
-const formatRowDate = (iso) => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; };
 
 function FinanceArchive({ transactions, savings, openFinance, openSaving, openSavingMovements, onDelete, openFinanceCategoryManager, compact = false }) {
   const rows = transactions.map((tx) => ({ id: tx.id, date: formatRowDate(tx.createdAt), month: monthLabel(tx.createdAt), sortValue: monthSortValue(tx.createdAt), type: tx.kind === "income" ? "Ingreso" : "Egreso", amount: tx.amount, description: tx.description, category: tx.category }));
@@ -889,7 +747,7 @@ function WidgetPickerModal({ available, addWidget, close }) {
 function UnifiedAgenda({ tasks, events, date, toggle, toggleEvent, openTask, openEvent }) { const items = [...tasks.filter((task) => task.date === date).map((task) => ({ ...task, itemType: "Tarea" })), ...events.filter((event) => event.date === date).map((event) => ({ ...event, itemType: "Evento" }))].sort((a, b) => a.time.localeCompare(b.time)); return <Card><CardHeader title="Tareas y eventos" action={<div className="flex gap-3"><button onClick={() => openTask(null, date)} className="flex items-center gap-1 text-sm font-semibold text-lime-700"><Plus size={15} /> Tarea</button><button onClick={() => openEvent(null, date)} className="flex items-center gap-1 text-sm font-semibold text-lime-700"><Plus size={15} /> Evento</button></div>} />{items.length ? <div className="space-y-2">{items.map((item) => item.itemType === "Evento" ? <button key={`event-${item.id}`} onClick={() => toggleEvent(item.id)} onDoubleClick={() => openEvent(item, date)} className="flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors hover:brightness-95" style={{ backgroundColor: `${item.color}55` }}><span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition-transform duration-300 ${item.done ? "scale-95 border-zinc-700 bg-zinc-700 text-white" : "border-zinc-400"}`}>{item.done && <Check size={13} />}</span><span className="h-8 w-1 rounded-full" style={{ backgroundColor: item.color }} /><span className="w-12 text-xs text-zinc-500">{item.time}</span><span className={`flex-1 text-sm font-medium ${item.done ? "text-zinc-500" : ""}`}><span className={item.done ? "task-strike" : ""}>{item.title}</span></span><span className="text-xs text-zinc-500">{item.type}</span></button> : <button key={`task-${item.id}`} onClick={() => toggle(item.id)} onDoubleClick={() => openTask(item, date)} className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"><span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${item.done ? "border-lime-500 bg-lime-400" : "border-zinc-300"}`}>{item.done && <Check size={13} />}</span><span className="w-12 text-xs text-zinc-400">{item.time}</span><span className={`flex-1 text-sm ${item.done ? "text-zinc-400" : ""}`}><span className={item.done ? "task-strike" : ""}>{item.title}</span></span><span className="text-xs text-zinc-500">{item.category}</span></button>)}</div> : <p className="py-8 text-center text-sm text-zinc-400">No hay tareas ni eventos para este día.</p>}</Card>; }
 
 export default function Page() {
-  const dark = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
+  const dark = useDarkTheme();
   const setDark = setStoredDark;
   const [wave, setWave] = useState(false);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
