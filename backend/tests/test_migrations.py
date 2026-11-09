@@ -99,3 +99,65 @@ def test_full_chain_upgrades_and_downgrades_on_empty_database(db_path):
     run_ok(db_path, "upgrade", "head")
     run_ok(db_path, "downgrade", "base")
     run_ok(db_path, "upgrade", "head")
+
+
+# --- 3-D: índices únicos y series de ahorros ---
+
+UNIQUE_REVISION = "c4d5e6f7a8b9"
+
+
+def index_names(db_path: str) -> set[str]:
+    return {name for (name,) in sql(db_path, "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'uq_%'")}
+
+
+def test_unique_migration_groups_savings_in_series_and_roundtrips(db_path):
+    run_ok(db_path, "upgrade", MONEY_REVISION)
+    user = add_user(db_path)
+    other = add_user(db_path, "beto@example.com")
+    execute(
+        db_path,
+        ("INSERT INTO saving_entries (user_id, name, start_amount, month) VALUES (?, 'Viaje', 100, '2026-10')", (user,)),
+        ("INSERT INTO saving_entries (user_id, name, start_amount, month) VALUES (?, 'Viaje', 150, '2026-11')", (user,)),
+        ("INSERT INTO saving_entries (user_id, name, start_amount, month) VALUES (?, 'Auto', 10, '2026-11')", (user,)),
+        ("INSERT INTO saving_entries (user_id, name, start_amount, month) VALUES (?, 'Viaje', 5, '2026-11')", (other,)),
+        ("INSERT INTO categories (user_id, name, scope, kind) VALUES (?, 'Trabajo', 'agenda', NULL)", (user,)),
+        ("INSERT INTO categories (user_id, name, scope, kind) VALUES (?, 'Trabajo', 'agenda', NULL)", (other,)),
+        ("INSERT INTO pomodoro_logs (user_id, log_date, seconds, subject_id) VALUES (?, '2026-11-04', 60, NULL)", (user,)),
+    )
+
+    run_ok(db_path, "upgrade", UNIQUE_REVISION)
+    assert len(index_names(db_path)) == 8
+    series = dict(sql(db_path, "SELECT user_id || ':' || name || ':' || month, series_id FROM saving_entries"))
+    assert series[f"{user}:Viaje:2026-10"] == series[f"{user}:Viaje:2026-11"]
+    assert series[f"{user}:Viaje:2026-11"] != series[f"{user}:Auto:2026-11"]
+    assert series[f"{user}:Viaje:2026-11"] != series[f"{other}:Viaje:2026-11"]
+    assert sql(db_path, "SELECT COUNT(*) FROM saving_entries")[0][0] == 4
+
+    run_ok(db_path, "downgrade", MONEY_REVISION)
+    assert index_names(db_path) == set()
+    assert "series_id" not in [row[1] for row in sql(db_path, "PRAGMA table_info(saving_entries)")]
+    assert sql(db_path, "SELECT COUNT(*) FROM saving_entries")[0][0] == 4
+    run_ok(db_path, "upgrade", "head")
+
+
+def test_unique_migration_stops_on_duplicates_without_changing_anything(db_path):
+    run_ok(db_path, "upgrade", MONEY_REVISION)
+    user = add_user(db_path)
+    execute(
+        db_path,
+        ("INSERT INTO categories (user_id, name, scope, kind) VALUES (?, 'Trabajo', 'agenda', NULL)", (user,)),
+        ("INSERT INTO categories (user_id, name, scope, kind) VALUES (?, 'trabajo', 'agenda', NULL)", (user,)),
+        ("INSERT INTO pomodoro_logs (user_id, log_date, seconds, subject_id) VALUES (?, '2026-11-04', 60, NULL)", (user,)),
+        ("INSERT INTO pomodoro_logs (user_id, log_date, seconds, subject_id) VALUES (?, '2026-11-04', 30, NULL)", (user,)),
+        ("INSERT INTO saving_entries (user_id, name, start_amount, month) VALUES (?, 'Viaje', 100, '2026-11')", (user,)),
+    )
+    result = alembic(db_path, "upgrade", UNIQUE_REVISION)
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "categories" in output and "pomodoro_logs" in output and "No se cambió ningún dato" in output
+    assert sql(db_path, "SELECT COUNT(*) FROM categories")[0][0] == 2
+    assert sql(db_path, "SELECT COUNT(*) FROM pomodoro_logs")[0][0] == 2
+    assert "series_id" not in [row[1] for row in sql(db_path, "PRAGMA table_info(saving_entries)")]
+    # Se arregla a mano y la migración corre sin problemas.
+    execute(db_path, ("DELETE FROM categories WHERE name = 'trabajo'", ()), ("DELETE FROM pomodoro_logs WHERE seconds = 30", ()))
+    run_ok(db_path, "upgrade", UNIQUE_REVISION)

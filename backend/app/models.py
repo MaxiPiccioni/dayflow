@@ -1,7 +1,8 @@
+import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .clock import today, utcnow
@@ -58,6 +59,10 @@ class Category(Base):
     kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
+# Un nombre por usuario, ámbito y tipo, sin distinguir mayúsculas (kind NULL cuenta como ""; en SQL los NULL nunca chocan).
+Index("uq_categories_user_scope_kind_name", Category.user_id, Category.scope, func.coalesce(Category.kind, ""), func.lower(Category.name), unique=True)
+
+
 class Habit(Base):
     __tablename__ = "habits"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -71,6 +76,7 @@ class Habit(Base):
 
 class HabitLog(Base):
     __tablename__ = "habit_logs"
+    __table_args__ = (Index("uq_habit_logs_habit_id_log_date", "habit_id", "log_date", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     habit_id: Mapped[int] = mapped_column(ForeignKey("habits.id"), index=True)
@@ -92,8 +98,15 @@ class Transaction(Base):
 
 class SavingEntry(Base):
     __tablename__ = "saving_entries"
+    __table_args__ = (
+        Index("uq_saving_entries_user_id_name_month", "user_id", "name", "month", unique=True),
+        Index("uq_saving_entries_user_id_series_id_month", "user_id", "series_id", "month", unique=True),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Todas las filas mensuales de un mismo ahorro comparten series_id: así renombrar o borrar el ahorro del mes actual
+    # alcanza a todo el ahorro y el traspaso al mes siguiente no lo revive ni lo duplica.
+    series_id: Mapped[str] = mapped_column(String(36), index=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(100))
     start_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     month: Mapped[str] = mapped_column(String(7), index=True)
@@ -133,6 +146,7 @@ class PomodoroSettings(Base):
 
 class PayPeriod(Base):
     __tablename__ = "pay_periods"
+    __table_args__ = (Index("uq_pay_periods_user_id_start", "user_id", "start", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     start: Mapped[date] = mapped_column(Date)
@@ -150,6 +164,7 @@ class PayPeriod(Base):
 
 class HourEntry(Base):
     __tablename__ = "hour_entries"
+    __table_args__ = (Index("uq_hour_entries_user_id_entry_date", "user_id", "entry_date", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     entry_date: Mapped[date] = mapped_column(Date, index=True)
@@ -172,6 +187,17 @@ class HourPayment(Base):
 
 class PomodoroLog(Base):
     __tablename__ = "pomodoro_logs"
+    __table_args__ = (
+        # Una fila por día y materia; los NULL no chocan entre sí, por eso "sin materia" tiene su propio índice parcial.
+        Index(
+            "uq_pomodoro_logs_user_id_log_date_subject",
+            "user_id", "log_date", "subject_id",
+            unique=True,
+            sqlite_where=text("subject_id IS NOT NULL"),
+            postgresql_where=text("subject_id IS NOT NULL"),
+        ),
+        Index("uq_pomodoro_logs_user_id_log_date_no_subject", "user_id", "log_date", unique=True, sqlite_where=text("subject_id IS NULL"), postgresql_where=text("subject_id IS NULL")),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     log_date: Mapped[date] = mapped_column(Date, index=True)

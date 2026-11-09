@@ -86,7 +86,6 @@ def test_rollover_skips_empty_months(client, db, user):
     assert sorted(entry.month for entry in db.query(SavingEntry).all()) == ["2026-10", "2027-01"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: borrar el ahorro del mes actual lo vuelve a crear en el próximo /dashboard a partir del mes anterior")
 def test_deleted_saving_does_not_come_back(client, db, user):
     create_saving(client, db, user, month="2026-10")
     [rolled] = dashboard_savings(client, user, "2026-11-04")
@@ -94,7 +93,6 @@ def test_deleted_saving_does_not_come_back(client, db, user):
     assert dashboard_savings(client, user, "2026-11-04") == []
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: renombrar el ahorro del mes actual hace que el nombre viejo se vuelva a crear desde el mes anterior")
 def test_renamed_saving_is_not_duplicated(client, db, user):
     create_saving(client, db, user, month="2026-10")
     [rolled] = dashboard_savings(client, user, "2026-11-04")

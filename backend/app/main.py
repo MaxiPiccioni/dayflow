@@ -7,12 +7,14 @@ from decimal import Decimal
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .clock import today
 from .config import settings
 from .database import get_db
+from .db_helpers import insert_or_get
 from .deps import current_user
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Subject, Task, Transaction, User
 from .money import ZERO, quantize, to_decimal
@@ -202,17 +204,21 @@ def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int,
 
 def _rollover_savings(db: Session, user: User, current_month: str) -> None:
     all_savings = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id).order_by(SavingEntry.month.desc())).all()
-    latest_by_name: dict[str, SavingEntry] = {}
+    latest_by_series: dict[str, SavingEntry] = {}
     for saving in all_savings:
-        latest_by_name.setdefault(saving.name, saving)
-    to_roll = [saving for saving in latest_by_name.values() if saving.month < current_month]
+        latest_by_series.setdefault(saving.series_id, saving)
+    to_roll = [saving for saving in latest_by_series.values() if saving.month < current_month]
     if not to_roll:
         return
     moved_by_id = _moved_amounts_by_saving_id(db, [saving.id for saving in to_roll])
     for saving in to_roll:
         current_amount = saving.start_amount + moved_by_id.get(saving.id, ZERO)
-        db.add(SavingEntry(user_id=user.id, name=saving.name, start_amount=current_amount, month=current_month))
-    db.commit()
+        db.add(SavingEntry(user_id=user.id, series_id=saving.series_id, name=saving.name, start_amount=current_amount, month=current_month))
+    try:
+        db.commit()
+    except IntegrityError:
+        # Otro pedido hizo el mismo traspaso al mismo tiempo: el índice único evita el duplicado y no hay nada más que hacer.
+        db.rollback()
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)
@@ -336,7 +342,11 @@ def create_category(payload: CategoryCreate, user: User = Depends(current_user),
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
     category = Category(user_id=user.id, name=name, scope=payload.scope, kind=payload.kind)
     db.add(category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe") from exc
     db.refresh(category)
     return category
 
@@ -436,12 +446,16 @@ def set_habit_log(habit_id: int, log_date: date_type, payload: HabitLogUpdate, c
     if log_date < habit.created_at.date():
         raise HTTPException(status_code=400, detail="No se pueden registrar días previos a la creación del hábito")
     count = min(max(payload.count, 0), habit.target)
-    log = db.scalar(select(HabitLog).where(HabitLog.habit_id == habit_id, HabitLog.log_date == log_date))
-    if not log:
-        log = HabitLog(user_id=user.id, habit_id=habit_id, log_date=log_date, count=count)
-        db.add(log)
-    else:
-        log.count = count
+
+    def find_log() -> HabitLog | None:
+        return db.scalar(select(HabitLog).where(HabitLog.habit_id == habit_id, HabitLog.log_date == log_date))
+
+    log = find_log()
+    if log is None:
+        log, created = insert_or_get(db, HabitLog(user_id=user.id, habit_id=habit_id, log_date=log_date, count=count), find_log)
+        if created:
+            return _build_habit_out(db, habit, today)
+    log.count = count
     db.commit()
     return _build_habit_out(db, habit, today)
 
@@ -526,11 +540,22 @@ def delete_transaction(transaction_id: int, user: User = Depends(current_user), 
     db.commit()
 
 
+SAVING_NAME_TAKEN = "Ya tenés un ahorro con ese nombre este mes"
+
+
 @app.post("/api/savings", response_model=SavingEntryOut, status_code=status.HTTP_201_CREATED)
 def create_saving(payload: SavingEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
-    saving = SavingEntry(user_id=user.id, name=payload.name.strip(), start_amount=payload.start_amount, month=today().strftime("%Y-%m"))
+    month = today().strftime("%Y-%m")
+    name = payload.name.strip()
+    if db.scalar(select(SavingEntry.id).where(SavingEntry.user_id == user.id, SavingEntry.name == name, SavingEntry.month == month)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN)
+    saving = SavingEntry(user_id=user.id, name=name, start_amount=payload.start_amount, month=month)
     db.add(saving)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN) from exc
     db.refresh(saving)
     return _build_saving_out(db, saving)
 
@@ -540,9 +565,24 @@ def update_saving(saving_id: int, payload: SavingEntryUpdate, user: User = Depen
     saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
     if not saving:
         raise HTTPException(status_code=404, detail="Saving not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "name" in changes:
+        new_name = changes.pop("name").strip()
+        if new_name != saving.name:
+            months = select(SavingEntry.month).where(SavingEntry.user_id == user.id, SavingEntry.series_id == saving.series_id)
+            clash = select(SavingEntry.id).where(SavingEntry.user_id == user.id, SavingEntry.name == new_name, SavingEntry.series_id != saving.series_id, SavingEntry.month.in_(months))
+            if db.scalar(clash.limit(1)):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN)
+            # El nombre es de todo el ahorro (todos sus meses): así el traspaso al mes siguiente no lo duplica.
+            db.execute(update(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.series_id == saving.series_id).values(name=new_name))
+            saving.name = new_name
+    for field, value in changes.items():
         setattr(saving, field, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN) from exc
     db.refresh(saving)
     return _build_saving_out(db, saving)
 
@@ -552,7 +592,10 @@ def delete_saving(saving_id: int, user: User = Depends(current_user), db: Sessio
     saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
     if not saving:
         raise HTTPException(status_code=404, detail="Saving not found")
-    db.delete(saving)
+    # Borrar un ahorro borra todo el ahorro (sus meses anteriores y sus movimientos): si quedara el mes pasado,
+    # el próximo /dashboard lo traspasaría de nuevo.
+    for entry in db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.series_id == saving.series_id)).all():
+        db.delete(entry)
     db.commit()
 
 
@@ -639,23 +682,26 @@ def delete_event(event_id: int, user: User = Depends(current_user), db: Session 
     db.commit()
 
 
+def _pomodoro_settings_row(db: Session, user: User) -> PomodoroSettings:
+    def find_row() -> PomodoroSettings | None:
+        return db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
+
+    row = find_row()
+    if row is None:
+        row, _ = insert_or_get(db, PomodoroSettings(user_id=user.id), find_row)
+    return row
+
+
 @app.get("/api/pomodoro", response_model=PomodoroOut)
 def get_pomodoro_settings(user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroSettings:
-    settings_row = db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
-    if not settings_row:
-        settings_row = PomodoroSettings(user_id=user.id)
-        db.add(settings_row)
-        db.commit()
-        db.refresh(settings_row)
+    settings_row = _pomodoro_settings_row(db, user)
+    db.refresh(settings_row)
     return settings_row
 
 
 @app.patch("/api/pomodoro", response_model=PomodoroOut)
 def update_pomodoro_settings(payload: PomodoroUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroSettings:
-    settings_row = db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
-    if not settings_row:
-        settings_row = PomodoroSettings(user_id=user.id)
-        db.add(settings_row)
+    settings_row = _pomodoro_settings_row(db, user)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(settings_row, field, value)
     db.commit()
@@ -680,12 +726,18 @@ def log_pomodoro_seconds(payload: PomodoroLogCreate, user: User = Depends(curren
     _ensure_subject_owned(db, user, payload.subject_id)
     current_day = today()
     subject_filter = PomodoroLog.subject_id.is_(None) if payload.subject_id is None else PomodoroLog.subject_id == payload.subject_id
-    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day, subject_filter))
-    if not row:
-        row = PomodoroLog(user_id=user.id, log_date=current_day, seconds=0, subject_id=payload.subject_id)
-        db.add(row)
-    row.seconds += payload.seconds
-    db.commit()
+
+    def find_row() -> PomodoroLog | None:
+        return db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day, subject_filter))
+
+    row = find_row()
+    created = False
+    if row is None:
+        row, created = insert_or_get(db, PomodoroLog(user_id=user.id, log_date=current_day, seconds=payload.seconds, subject_id=payload.subject_id), find_row)
+    if not created:
+        # Suma en la base (no en Python): dos pedidos a la vez no se pisan.
+        row.seconds = PomodoroLog.seconds + payload.seconds
+        db.commit()
     db.refresh(row)
     # Se devuelve el total del día (todas las materias) para que el gráfico semanal no cambie.
     total = db.scalar(select(func.coalesce(func.sum(PomodoroLog.seconds), 0)).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day))
@@ -749,9 +801,11 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
         raise HTTPException(status_code=404, detail="No hay registros para esa fecha")
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
     rate = last.rate if last else ZERO
-    period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
-    db.add(period)
-    db.commit()
+    period, _ = insert_or_get(
+        db,
+        PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate),
+        lambda: db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.start == start)),
+    )
     db.refresh(period)
     return period
 
@@ -804,13 +858,18 @@ def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), 
 def upsert_hour_entry(payload: HourEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HourEntry:
     _ensure_not_history(payload.entry_date)
     _ensure_entry_period_open(db, user, payload.entry_date)
-    entry = db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
-    if entry:
-        for field, value in payload.model_dump().items():
-            setattr(entry, field, value)
-    else:
-        entry = HourEntry(user_id=user.id, **payload.model_dump())
-        db.add(entry)
+
+    def find_entry() -> HourEntry | None:
+        return db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
+
+    entry = find_entry()
+    if entry is None:
+        entry, created = insert_or_get(db, HourEntry(user_id=user.id, **payload.model_dump()), find_entry)
+        if created:
+            db.refresh(entry)
+            return entry
+    for field, value in payload.model_dump().items():
+        setattr(entry, field, value)
     db.commit()
     db.refresh(entry)
     return entry
