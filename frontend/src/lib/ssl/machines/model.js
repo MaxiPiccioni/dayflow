@@ -367,3 +367,19 @@ export function importMachine(raw) {
   }
   return { machine };
 }
+
+// Función de transición f escrita línea por línea, como en la guía.
+export function functionLines(m) {
+  const fmt = formatSymbol;
+  if (isFa(m)) {
+    const groups = new Map();
+    for (const t of m.transitions) {
+      const key = `${t.from}|${t.symbol}`;
+      if (!groups.has(key)) groups.set(key, { from: t.from, symbol: t.symbol, to: [] });
+      groups.get(key).to.push(t.to);
+    }
+    return [...groups.values()].map((g) => `f(${g.from}, ${fmt(g.symbol)}) = ${m.type === "afnd" ? `{${g.to.join(", ")}}` : g.to[0]}`);
+  }
+  if (m.type === "ap") return m.transitions.map((t) => `f(${t.from}, ${fmt(t.read)}, ${fmt(t.pop)}) = (${t.to}, ${fmt(t.push)})`);
+  return m.transitions.map((t) => `f(${t.from}, ${t.read}) = (${t.to}, ${t.write}, ${t.move})`);
+}

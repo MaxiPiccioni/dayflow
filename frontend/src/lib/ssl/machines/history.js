@@ -26,3 +26,9 @@ export function redo(history) {
 
 export const canUndo = (history) => history.past.length > 0;
 export const canRedo = (history) => history.future.length > 0;
+
+// Cierra una edición transitoria (por ejemplo un arrastre): el paso de historial es el estado de antes de empezar.
+export function commitFrom(history, snapshot) {
+  if (snapshot === history.present) return history;
+  return { past: [...history.past, snapshot].slice(-LIMIT), present: history.present, future: [] };
+}

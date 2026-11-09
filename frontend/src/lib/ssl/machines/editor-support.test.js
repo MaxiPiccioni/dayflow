@@ -82,3 +82,17 @@ describe("autómatas guardados", () => {
     expect(loadStore(fake({ [MACHINES_KEY]: JSON.stringify({ v: 9, items: [] }) }))).toEqual(emptyStore());
   });
 });
+
+describe("edición transitoria", () => {
+  it("un arrastre largo es un solo paso de historial", async () => {
+    const { commitFrom } = await import("./history.js");
+    let h = createHistory("a0");
+    const snapshot = h.present;
+    h = replace(h, "a1");
+    h = replace(h, "a2");
+    h = commitFrom(h, snapshot);
+    expect(h.past).toEqual(["a0"]);
+    expect(undo(h).present).toBe("a0");
+    expect(commitFrom(createHistory("x"), "x").past).toEqual([]);
+  });
+});

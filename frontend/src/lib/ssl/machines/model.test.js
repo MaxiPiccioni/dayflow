@@ -115,3 +115,20 @@ describe("análisis, aristas y definición", () => {
     expect(importMachine({ type: "xx" }).error).toBeTruthy();
   });
 });
+
+describe("función de transición", () => {
+  it("escribe f línea por línea", async () => {
+    const { functionLines } = await import("./model.js");
+    expect(functionLines(build())).toEqual(["f(p, 1) = q", "f(q, 1) = p"]);
+    let nd = createMachine("afnd");
+    nd = addState(nd, { id: "p" }).machine;
+    nd = addTransitions(nd, "p", "p", ["0"]).machine;
+    nd = addState(nd, { id: "q" }).machine;
+    nd = addTransition(nd, { from: "p", to: "q", symbol: "0" }).machine;
+    expect(functionLines(nd)).toEqual(["f(p, 0) = {p, q}"]);
+    let ap = createMachine("ap", { alphabet: ["a"] });
+    ap = addState(ap, { id: "t" }).machine;
+    ap = addTransition(ap, { from: "t", to: "t", read: "a", pop: "#", push: "#a" }).machine;
+    expect(functionLines(ap)).toEqual(["f(t, a, #) = (t, #a)"]);
+  });
+});
