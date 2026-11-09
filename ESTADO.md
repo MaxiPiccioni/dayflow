@@ -2,7 +2,7 @@
 
 ## Hecho (todo en main)
 - Fase 1 seguridad: secretos fuera del repo, JWT con PyJWT, rate limit (300/min general, /auth 10/5min, login 5 fallos/15min), CORS Retry-After, HSTS y docs off en producción.
-- Fase 2 tests + CI (GitHub Actions: ruff, alembic, pytest, lint/build). Hoy: 299 passed, 2 xfailed (ahorros).
+- Fase 2 tests + CI (GitHub Actions: ruff, alembic, pytest, lint/build). Hoy: 358 passed, 0 xfailed (en la rama de la fase 3).
 - Fase 3-A: bugs y bloqueo de períodos cerrados.
 - Hotfix 429 en el frontend.
 - Facultad completa: materias por año (1–5), estados, nota única, correlativas (aprobada/cursada, sin ciclos), electivas con créditos, anotaciones, dashboard, % de carrera, filtros, links de Drive por materia y carpeta.
@@ -11,7 +11,7 @@
 - Sandbox de SSL (Sintaxis y Semántica de los Lenguajes), solo frontend en `lib/ssl` y `components/ssl`: Unidad 2 (ejercicios 1 a 29) y Unidades 3 a 6 con editor de autómatas (AFD, AFND, AP, ALA y MT), ejecución manual/automática y comprobación por lenguaje. Progreso y autómatas en localStorage. 246 tests de vitest.
 
 ## Pendiente (orden sugerido)
-1. Datos y correctitud (fase 3): 3-B fechas del cliente/UTC y mensajes 422 en español; 3-C dinero con Numeric; 3-D constraints únicos + CI con Postgres; 3-E categorías con FK; 3-F ahorros (los 2 xfail).
+1. Datos y correctitud (fase 3): hecha en la rama `fix/fase3-datos` (3-C dinero con Numeric, 3-D índices únicos y CI con Postgres, 3-E categorías por id, 3-F ahorros sin xfail). Falta aplicarla en producción (ver REPORTE_FASE3_DATOS.md: backup de Neon primero). Quedan 3.6 (tareas repetidas con series) y 3.7 (rollover fuera del GET).
 2. Sandbox de SSL: confirmar con la cátedra la complejidad de Shannon (estados x símbolos de cinta); ejercicios 5 y 21 de la Unidad 6 sin comprobación automática. Unidad 1 (teórica) más adelante, con el programa del final.
 3. Facultad: partes interactivas de otras materias, árbol de correlativas, integración con Claude (API key solo en Render, rate limit, vista previa antes de guardar), carpetas de electivas.
 4. Fase 4: modularizar `main.py` y `page.js`; unificar paleta de colores (`lib/faculty.js` vs `page.js`).
