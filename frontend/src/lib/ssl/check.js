@@ -178,6 +178,23 @@ const CHECKERS = {
     return answer === expected ? ok(result.equal ? `¡Correcto! Son equivalentes: ${result.reason}.` : `¡Correcto! No son equivalentes: ${result.reason}.`) : bad(result.equal ? "Sí son equivalentes: al minimizarlos quedan iguales." : `No son equivalentes: ${result.reason}.`);
   },
 
+  // Clases de equivalencia entre AFD dados por tabla: se escriben los pares, por ejemplo "A=B, C=E".
+  "dfa-classes"(spec, answer) {
+    const letter = (t) => t.name.replace(/^f/, "");
+    const expected = new Set();
+    for (let i = 0; i < spec.tables.length; i++) for (let j = i + 1; j < spec.tables.length; j++) {
+      if (equivalent(spec.tables[i], spec.tables[j]).equal) expected.add([letter(spec.tables[i]), letter(spec.tables[j])].sort().join("="));
+    }
+    const text = answer.trim();
+    const none = /^(ninguno|ninguna|no hay|-|∅)$/i.test(text);
+    const given = new Set(none ? [] : text.split(/[,;\s]+/).filter(Boolean).map((p) => p.replace(/AFD/gi, "").split("=").map((x) => x.trim().toUpperCase()).sort().join("=")));
+    if (!text) return bad("Escribí los pares de autómatas equivalentes, por ejemplo A=B, C=E (o \"ninguno\").");
+    const wrong = [...given].filter((p) => !expected.has(p));
+    const missing = [...expected].filter((p) => !given.has(p));
+    if (!wrong.length && !missing.length) return ok(expected.size ? `¡Correcto! Son equivalentes: ${[...expected].join(", ")}.` : "¡Correcto! No hay autómatas equivalentes entre sí.");
+    return bad(wrong.length ? `No son equivalentes: ${wrong.join(", ")}.` : `Te falta${missing.length > 1 ? "n" : ""} ${missing.length} par${missing.length > 1 ? "es" : ""}.`);
+  },
+
   ambiguity(spec, answer) {
     const g = grammarOf(spec.grammar);
     const result = detectAmbiguity(g, spec.maxLen ?? 7);

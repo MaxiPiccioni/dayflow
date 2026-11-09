@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BookOpenCheck, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { MathText } from "@/components/ssl/math-text";
+import { MachineWorkbench } from "@/components/ssl/editor/machine-workbench";
 import { StepReveal } from "@/components/ssl/step-reveal";
 import { TransitionTable } from "@/components/ssl/transition-table";
 
@@ -22,6 +23,12 @@ export function ExampleCard({ example }) {
           <div className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50"><MathText text={example.statement} className="block leading-relaxed" /></div>
           {example.tables && <div className="flex flex-wrap gap-4">{example.tables.map((table) => <TransitionTable key={table.name} table={table} />)}</div>}
           <StepReveal steps={example.steps} />
+          {example.machine && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-zinc-500">Probalo: el autómata del ejemplo en el editor (para ejecutarlo con tus cadenas)</p>
+              <MachineWorkbench config={{ ...example.machine, readOnly: true, spec: null, reference: null }} exerciseKey={`ejemplo.${example.title}`} />
+            </div>
+          )}
         </div>
       )}
     </Card>

@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { AnswerBox } from "@/components/ssl/answer-box";
 import { MathText } from "@/components/ssl/math-text";
 import { TransitionTable } from "@/components/ssl/transition-table";
+import { MachineWorkbench } from "@/components/ssl/editor/machine-workbench";
 import { ToolPanel } from "@/components/ssl/tools/tool-panel";
 
 const noteClass = "flex gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-400/10 dark:text-amber-300";
@@ -19,7 +20,7 @@ export function ExerciseCard({ exercise, progress, onAnswer, onToggleDone }) {
     <Card className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">Ejercicio {exercise.number}{exercise.id.startsWith("u2-a") ? " (Unidad 3)" : ""} · guía pág. {exercise.page}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">Ejercicio {exercise.number}{exercise.id.startsWith("u2-a") ? " (Unidad 3 del libro)" : ""} · guía pág. {exercise.page}</p>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
           <input type="checkbox" checked={done} onChange={(event) => onToggleDone(exercise.id, event.target.checked)} className="h-4 w-4 accent-lime-600" />
@@ -46,7 +47,16 @@ export function ExerciseCard({ exercise, progress, onAnswer, onToggleDone }) {
             )}
             {part.note && <p className={noteClass}><Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" /><span>{part.note}</span></p>}
             {part.tool && <ToolPanel tool={part.tool} defaultOpen={exercise.parts.length === 1} />}
-            {part.checks.map((check) => {
+            {part.machine && (
+              <MachineWorkbench
+                key={`${exercise.id}.${part.id}`}
+                config={part.machine}
+                exerciseKey={`${exercise.id}.${part.id}`}
+                savedJson={progress.answers[`${exercise.id}.${part.id}.machine`]}
+                onSaveWorking={(json) => onAnswer(`${exercise.id}.${part.id}.machine`, json)}
+              />
+            )}
+            {(part.checks ?? []).map((check) => {
               const key = `${exercise.id}.${part.id}.${check.id}`;
               return <AnswerBox key={key} check={check} value={progress.answers[key] ?? ""} onChange={(text) => onAnswer(key, text)} />;
             })}
