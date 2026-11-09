@@ -23,15 +23,14 @@ export function SymbolField({ label, value, onChange, multiline = false, rows = 
 
   const shared = {
     id,
-    ref,
     value,
     placeholder,
     spellCheck: false,
     autoComplete: "off",
     autoCapitalize: "off",
     onChange: (event) => onChange(event.target.value),
-    className: `${inputClass} font-mono`,
   };
+  const fieldClass = `${inputClass} font-mono`;
 
   return (
     <div className={className}>
@@ -42,9 +41,9 @@ export function SymbolField({ label, value, onChange, multiline = false, rows = 
         </button>
       </div>
       {multiline ? (
-        <textarea {...shared} rows={rows} className={`${shared.className} resize-y`} />
+        <textarea {...shared} ref={ref} rows={rows} className={`${fieldClass} resize-y`} />
       ) : (
-        <input {...shared} type="text" onKeyDown={(event) => { if (event.key === "Enter" && onEnter) { event.preventDefault(); onEnter(); } }} />
+        <input {...shared} ref={ref} type="text" className={fieldClass} onKeyDown={(event) => { if (event.key === "Enter" && onEnter) { event.preventDefault(); onEnter(); } }} />
       )}
       {hint && <p className="mt-1 text-[11px] text-zinc-400">{hint}</p>}
       {open && (

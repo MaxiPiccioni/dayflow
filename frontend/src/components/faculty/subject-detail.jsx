@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronUp, Folder, HardDrive, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, FlaskConical, Folder, HardDrive, Pencil, Plus, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/faculty/confirm-dialog";
@@ -10,13 +10,14 @@ import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
 import { StudySummary } from "@/components/faculty/study-summary";
 import { SubjectRequirements } from "@/components/faculty/subject-requirements";
 import { api } from "@/lib/api";
+import { isSslSubject } from "@/lib/ssl/subject";
 import { allowsGrade, formatGrade, inputClass, levelLabel, planSummary, STATUS, STATUS_KEYS } from "@/lib/faculty";
 
 const smallButton = "grid h-7 w-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
 // Detalle de una materia dentro del panel. Cada cambio va al backend y onChange recibe la materia actualizada.
 // onOpen abre el detalle de otra materia (desde las correlativas); onNotesSaved aplica las anotaciones guardadas.
-export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved, study }) {
+export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved, onSandbox, study }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [gradeDraft, setGradeDraft] = useState(null);
@@ -80,7 +81,12 @@ export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onO
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button type="button" onClick={onBack} className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-700"><ArrowLeft size={15} /> Volver</button>
-        <button type="button" onClick={onEdit} className="flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white dark:bg-lime-400 dark:text-zinc-950"><Pencil size={14} /> Editar materia</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onSandbox && isSslSubject(subject) && (
+            <button type="button" onClick={onSandbox} className="flex items-center gap-1 rounded-xl bg-lime-200 px-3 py-2 text-sm font-semibold text-lime-950"><FlaskConical size={14} /> Sandbox</button>
+          )}
+          <button type="button" onClick={onEdit} className="flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white dark:bg-lime-400 dark:text-zinc-950"><Pencil size={14} /> Editar materia</button>
+        </div>
       </div>
 
       <Card>
