@@ -3,7 +3,8 @@ import tempfile
 
 # La base de tests se define antes de importar la app para no tocar dayflow.db.
 _DB_FILE = os.path.join(tempfile.mkdtemp(), "test.db")
-os.environ["DATABASE_URL"] = f"sqlite:///{_DB_FILE}"
+# En CI hay un job que corre los tests sobre Postgres: TEST_DATABASE_URL lo indica.
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{_DB_FILE}"
 os.environ["ENVIRONMENT"] = "development"
 os.environ["JWT_SECRET"] = "test-secret-" + "x" * 40
 
