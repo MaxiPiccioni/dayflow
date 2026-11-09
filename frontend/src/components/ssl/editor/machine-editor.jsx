@@ -261,7 +261,7 @@ export function MachineEditor({ editor, readOnly = false, lockAlphabet = false, 
         <div className="flex flex-wrap gap-1.5">
           {!readOnly && (
             <>
-              <button type="button" onClick={addQuick} className={button}><Plus size={14} aria-hidden="true" /> Estado</button>
+              <button type="button" onClick={addQuick} className={button}><Plus size={14} aria-hidden="true" /> Estado nuevo</button>
               <button type="button" onClick={editor.undo} disabled={!editor.canUndo} className={button} aria-label="Deshacer"><Undo2 size={14} aria-hidden="true" /></button>
               <button type="button" onClick={editor.redo} disabled={!editor.canRedo} className={button} aria-label="Rehacer"><Redo2 size={14} aria-hidden="true" /></button>
             </>
