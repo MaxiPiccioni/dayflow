@@ -161,3 +161,48 @@ def test_unique_migration_stops_on_duplicates_without_changing_anything(db_path)
     # Se arregla a mano y la migración corre sin problemas.
     execute(db_path, ("DELETE FROM categories WHERE name = 'trabajo'", ()), ("DELETE FROM pomodoro_logs WHERE seconds = 30", ()))
     run_ok(db_path, "upgrade", UNIQUE_REVISION)
+
+
+# --- 3-E: categorías por id ---
+
+CATEGORY_REVISION = "d5e6f7a8b9c0"
+
+
+def test_category_migration_converts_names_to_ids_and_roundtrips(db_path):
+    run_ok(db_path, "upgrade", UNIQUE_REVISION)
+    user = add_user(db_path)
+    other = add_user(db_path, "beto@example.com")
+    execute(
+        db_path,
+        ("INSERT INTO categories (user_id, name, scope, kind) VALUES (?, 'Trabajo', 'agenda', NULL)", (user,)),
+        ("INSERT INTO categories (user_id, name, scope, kind) VALUES (?, 'Comida', 'finance', 'expense')", (user,)),
+        ("INSERT INTO tasks (user_id, title, due_date, time, category, completed) VALUES (?, 'a', '2026-11-04', '09:00', 'Trabajo', 0)", (user,)),
+        ("INSERT INTO tasks (user_id, title, due_date, time, category, completed) VALUES (?, 'b', '2026-11-04', '09:00', 'trabajo', 0)", (user,)),
+        ("INSERT INTO tasks (user_id, title, due_date, time, category, completed) VALUES (?, 'c', '2026-11-04', '09:00', 'Libre', 0)", (user,)),
+        ("INSERT INTO tasks (user_id, title, due_date, time, category, completed) VALUES (?, 'd', '2026-11-04', '09:00', NULL, 0)", (user,)),
+        ("INSERT INTO tasks (user_id, title, due_date, time, category, completed) VALUES (?, 'e', '2026-11-04', '09:00', 'Trabajo', 0)", (other,)),
+        ("INSERT INTO events (user_id, title, event_date, time, type, color, done, important) VALUES (?, 'ev', '2026-11-04', '09:00', 'Trabajo', '#fff', 0, 0)", (user,)),
+        ("INSERT INTO transactions (user_id, description, amount, kind, category, method, created_at) VALUES (?, 't1', 5, 'expense', 'Comida', 'Efectivo', '2026-11-01 10:00:00')", (user,)),
+        ("INSERT INTO transactions (user_id, description, amount, kind, category, method, created_at) VALUES (?, 't2', 5, 'income', 'Comida', 'Efectivo', '2026-11-01 10:00:00')", (user,)),
+        ("INSERT INTO shopping_items (user_id, name, category, stock, force_list, buy_quantity) VALUES (?, 'leche', 'Almacén', 0, 0, 1)", (user,)),
+    )
+
+    run_ok(db_path, "upgrade", CATEGORY_REVISION)
+    names = dict(sql(db_path, "SELECT t.title, c.name FROM tasks t LEFT JOIN categories c ON c.id = t.category_id"))
+    assert names == {"a": "Trabajo", "b": "Trabajo", "c": "Libre", "d": None, "e": "Trabajo"}
+    ids = {title: cid for title, cid in sql(db_path, "SELECT title, category_id FROM tasks")}
+    assert ids["a"] == ids["b"] != ids["e"]  # 'trabajo' reutiliza la existente; el otro usuario tiene la suya
+    assert sql(db_path, "SELECT c.name FROM events e JOIN categories c ON c.id = e.category_id") == [("Trabajo",)]
+    tx = dict(sql(db_path, "SELECT t.description, c.kind FROM transactions t JOIN categories c ON c.id = t.category_id"))
+    assert tx == {"t1": "expense", "t2": "income"}  # "Comida" de ingresos se crea aparte
+    assert sql(db_path, "SELECT c.scope FROM shopping_items s JOIN categories c ON c.id = s.category_id") == [("shopping",)]
+    assert "category" not in [row[1] for row in sql(db_path, "PRAGMA table_info(tasks)")]
+    assert sql(db_path, "SELECT COUNT(*) FROM tasks")[0][0] == 5
+
+    run_ok(db_path, "downgrade", UNIQUE_REVISION)
+    back = dict(sql(db_path, "SELECT title, category FROM tasks"))
+    assert back == {"a": "Trabajo", "b": "Trabajo", "c": "Libre", "d": None, "e": "Trabajo"}
+    assert sql(db_path, "SELECT type FROM events") == [("Trabajo",)]
+    assert "category_id" not in [row[1] for row in sql(db_path, "PRAGMA table_info(tasks)")]
+    run_ok(db_path, "upgrade", "head")
+    assert sql(db_path, "SELECT COUNT(*) FROM tasks WHERE category_id IS NOT NULL")[0][0] == 4

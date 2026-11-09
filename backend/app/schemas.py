@@ -57,6 +57,7 @@ class TaskOut(TaskCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     completed: bool
+    category_id: int | None = None
 
 
 WEEKDAY_CODES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -142,13 +143,14 @@ class ShoppingItemUpdate(BaseModel):
 class ShoppingItemOut(ShoppingItemCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    category_id: int | None = None
 
 
 class TransactionCreate(BaseModel):
     description: str = Field(min_length=1, max_length=200)
     amount: Money = Field(gt=0)
     kind: str = Field(pattern="^(income|expense)$")
-    category: str | None = Field(default="General", max_length=50)
+    category: str | None = Field(default=None, max_length=50)
     method: str = Field(default="Efectivo", pattern="^(Efectivo|Digital|Otro)$")
 
 
@@ -156,6 +158,7 @@ class TransactionOut(TransactionCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
+    category_id: int | None = None
 
 
 class SavingEntryCreate(BaseModel):
@@ -217,6 +220,7 @@ class EventOut(EventCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     done: bool
+    category_id: int | None = None
 
 
 class EventCreatePayload(EventCreate):

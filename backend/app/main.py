@@ -259,9 +259,10 @@ def _ensure_subject_owned(db: Session, user: User, subject_id: int | None) -> No
 @app.post("/api/tasks", response_model=list[TaskOut], status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Task]:
     _ensure_subject_owned(db, user, payload.subject_id)
-    data = payload.model_dump(exclude={"repeat_days"})
+    data = payload.model_dump(exclude={"repeat_days", "category"})
+    category_id = _category_id(db, user, "agenda", None, payload.category)
     occurrences = _repeat_occurrence_dates(payload.due_date, payload.repeat_days)
-    tasks = [Task(user_id=user.id, **{**data, "due_date": occurrence}) for occurrence in occurrences]
+    tasks = [Task(user_id=user.id, category_id=category_id, **{**data, "due_date": occurrence}) for occurrence in occurrences]
     db.add_all(tasks)
     db.commit()
     for task in tasks:
@@ -287,7 +288,10 @@ def update_task(task_id: int, payload: TaskUpdate, user: User = Depends(current_
         raise HTTPException(status_code=404, detail="Task not found")
     _ensure_subject_owned(db, user, payload.subject_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(task, field, value)
+        if field == "category":
+            task.category_id = _category_id(db, user, "agenda", None, value)
+        else:
+            setattr(task, field, value)
     db.commit()
     db.refresh(task)
     return task
@@ -321,6 +325,26 @@ def _category_name_taken(db: Session, user_id: int, scope: str, kind: str | None
     # minúsculas caracteres ASCII ("Ó" != "ó"), a diferencia de Postgres.
     wanted = name.strip().casefold()
     return any(category.name.strip().casefold() == wanted for category in db.scalars(_category_query(user_id, scope, kind)) if category.id != exclude_id)
+
+
+def _category_id(db: Session, user: User, scope: str, kind: str | None, name: str | None) -> int | None:
+    """Id de la categoría con ese nombre (sin distinguir mayúsculas) o None si no hay nombre.
+
+    Si el nombre no existe todavía se crea: antes la categoría era texto libre y el frontend podía mandar cualquiera.
+    """
+    clean = (name or "").strip()
+    if not clean:
+        return None
+    wanted = clean.casefold()
+    for category in db.scalars(_category_query(user.id, scope, kind)):
+        if category.name.strip().casefold() == wanted:
+            return category.id
+
+    def find() -> Category | None:
+        return next((category for category in db.scalars(_category_query(user.id, scope, kind)) if category.name.strip().casefold() == wanted), None)
+
+    category, _ = insert_or_get(db, Category(user_id=user.id, name=clean, scope=scope, kind=kind), find)
+    return category.id
 
 
 @app.get("/api/categories", response_model=list[CategoryOut])
@@ -359,23 +383,8 @@ def rename_category(category_id: int, payload: CategoryUpdate, user: User = Depe
     name = payload.name.strip()
     if _category_name_taken(db, user.id, category.scope, category.kind, name, exclude_id=category.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
-    old_name = category.name
+    # Las tareas, eventos, movimientos y compras apuntan a la categoría por id: no hay nada más que actualizar.
     category.name = name
-    if category.scope == "finance":
-        affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == old_name, Transaction.kind == category.kind)).all()
-        for transaction in affected_transactions:
-            transaction.category = name
-    elif category.scope == "shopping":
-        affected_items = db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id, ShoppingItem.category == old_name)).all()
-        for item in affected_items:
-            item.category = name
-    else:
-        affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == old_name)).all()
-        for task in affected_tasks:
-            task.category = name
-        affected_events = db.scalars(select(Event).where(Event.user_id == user.id, Event.type == old_name)).all()
-        for event in affected_events:
-            event.type = name
     db.commit()
     db.refresh(category)
     return category
@@ -386,21 +395,9 @@ def delete_category(category_id: int, user: User = Depends(current_user), db: Se
     category = db.scalar(select(Category).where(Category.id == category_id, Category.user_id == user.id))
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    if category.scope == "finance":
-        affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == category.name, Transaction.kind == category.kind)).all()
-        for transaction in affected_transactions:
-            transaction.category = None
-    elif category.scope == "shopping":
-        affected_items = db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id, ShoppingItem.category == category.name)).all()
-        for item in affected_items:
-            item.category = None
-    else:
-        affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == category.name)).all()
-        for task in affected_tasks:
-            task.category = None
-        affected_events = db.scalars(select(Event).where(Event.user_id == user.id, Event.type == category.name)).all()
-        for event in affected_events:
-            event.type = None
+    # SQLite no aplica el ON DELETE SET NULL: se hace explícito para que valga igual en las dos bases.
+    for model in (Task, Event, Transaction, ShoppingItem):
+        db.execute(update(model).where(model.user_id == user.id, model.category_id == category.id).values(category_id=None))
     db.delete(category)
     db.commit()
 
@@ -494,7 +491,8 @@ def list_shopping_items(user: User = Depends(current_user), db: Session = Depend
 
 @app.post("/api/shopping-items", response_model=ShoppingItemOut, status_code=status.HTTP_201_CREATED)
 def create_shopping_item(payload: ShoppingItemCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> ShoppingItem:
-    item = ShoppingItem(user_id=user.id, **{**payload.model_dump(), "name": payload.name.strip()})
+    category_id = _category_id(db, user, "shopping", None, payload.category)
+    item = ShoppingItem(user_id=user.id, category_id=category_id, **{**payload.model_dump(exclude={"category"}), "name": payload.name.strip()})
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -507,7 +505,10 @@ def update_shopping_item(item_id: int, payload: ShoppingItemUpdate, user: User =
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(item, field, value)
+        if field == "category":
+            item.category_id = _category_id(db, user, "shopping", None, value)
+        else:
+            setattr(item, field, value)
     db.commit()
     db.refresh(item)
     return item
@@ -524,7 +525,8 @@ def delete_shopping_item(item_id: int, user: User = Depends(current_user), db: S
 
 @app.post("/api/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(payload: TransactionCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Transaction:
-    transaction = Transaction(user_id=user.id, **payload.model_dump())
+    category_id = _category_id(db, user, "finance", payload.kind, payload.category)
+    transaction = Transaction(user_id=user.id, category_id=category_id, **payload.model_dump(exclude={"category"}))
     db.add(transaction)
     db.commit()
     db.refresh(transaction)
@@ -640,9 +642,10 @@ def list_events(user: User = Depends(current_user), db: Session = Depends(get_db
 
 @app.post("/api/events", response_model=list[EventOut], status_code=status.HTTP_201_CREATED)
 def create_event(payload: EventCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Event]:
-    data = payload.model_dump(exclude={"repeat_days"})
+    data = payload.model_dump(exclude={"repeat_days", "type"})
     occurrences = _repeat_occurrence_dates(payload.event_date, payload.repeat_days)
-    events = [Event(user_id=user.id, **{**data, "event_date": occurrence}) for occurrence in occurrences]
+    category_id = _category_id(db, user, "agenda", None, payload.type)
+    events = [Event(user_id=user.id, category_id=category_id, **{**data, "event_date": occurrence}) for occurrence in occurrences]
     db.add_all(events)
     db.commit()
     for event in events:
@@ -667,7 +670,10 @@ def update_event(event_id: int, payload: EventUpdate, user: User = Depends(curre
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(event, field, value)
+        if field == "type":
+            event.category_id = _category_id(db, user, "agenda", None, value)
+        else:
+            setattr(event, field, value)
     db.commit()
     db.refresh(event)
     return event

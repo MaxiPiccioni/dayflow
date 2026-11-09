@@ -42,7 +42,13 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200))
     due_date: Mapped[date] = mapped_column(Date, default=today, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_tasks_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def category(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -91,7 +97,13 @@ class Transaction(Base):
     description: Mapped[str] = mapped_column(String(200))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     kind: Mapped[str] = mapped_column(String(20))
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_transactions_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def category(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     method: Mapped[str] = mapped_column(String(20), default="Efectivo")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -129,7 +141,13 @@ class Event(Base):
     title: Mapped[str] = mapped_column(String(200))
     event_date: Mapped[date] = mapped_column(Date, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
-    type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_events_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def type(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     color: Mapped[str] = mapped_column(String(10), default="#d9f99d")
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     important: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -211,7 +229,13 @@ class ShoppingItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_shopping_items_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def category(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     stock: Mapped[int] = mapped_column(Integer, default=0)
     force_list: Mapped[bool] = mapped_column(Boolean, default=False)
     buy_quantity: Mapped[int] = mapped_column(Integer, default=1)

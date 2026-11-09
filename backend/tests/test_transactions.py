@@ -15,7 +15,7 @@ def dashboard_transactions(client, user) -> list[dict]:
 def test_create_uses_defaults(client, user):
     created = create_transaction(client, user, description="Sueldo", amount=5000, kind="income")
     # Comportamiento actual: la categoría por defecto es "General", que no está entre los defaults de finanzas.
-    assert (created["category"], created["method"]) == ("General", "Efectivo")
+    assert (created["category"], created["method"]) == (None, "Efectivo")
 
 
 @pytest.mark.parametrize("overrides", [{"amount": 0}, {"kind": "transfer"}, {"method": "Tarjeta"}], ids=["zero-amount", "kind", "method"])

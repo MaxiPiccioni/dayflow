@@ -23,7 +23,13 @@ def create_event(client, headers, **overrides) -> dict:
 
 
 def create_category(client, headers, name, scope="agenda", kind=None) -> dict:
+    """Crea la categoría; si ya existe (por ejemplo la creó una tarea con ese nombre) devuelve la existente."""
     response = client.post("/api/categories", json={"name": name, "scope": scope, "kind": kind}, headers=headers)
+    if response.status_code == 409:
+        query = f"scope={scope}" + (f"&kind={kind}" if kind else "")
+        existing = [c for c in client.get(f"/api/categories?{query}", headers=headers).json() if c["name"].casefold() == name.casefold()]
+        assert existing, response.text
+        return existing[0]
     assert response.status_code == 201, response.text
     return response.json()
 
