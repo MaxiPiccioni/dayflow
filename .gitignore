@@ -26,3 +26,6 @@ settings.local.json
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
+
+# Material de la cátedra (no subir)
+docs/ssl/
