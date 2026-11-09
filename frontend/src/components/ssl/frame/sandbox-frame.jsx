@@ -12,6 +12,7 @@ import { MathText } from "@/components/ssl/math-text";
 import { StepReveal } from "@/components/ssl/step-reveal";
 import { TransitionTable } from "@/components/ssl/transition-table";
 import { ToolPanel } from "@/components/ssl/tools/tool-panel";
+import { GENERIC_TOOLS, OWN_TOOL_ICON, TOOL_LABEL } from "@/components/ssl/frame/tools";
 import { buildItems, hintOf, partsOf } from "@/lib/ssl/items";
 
 const TAB_LABEL = {
@@ -19,7 +20,7 @@ const TAB_LABEL = {
   guardados: "Guardados", herramienta: "Herramienta", respuestas: "Respuestas", complejidad: "Complejidad", pasos: "Pasos", solucion: "Solución", pista: "Pista",
 };
 
-function tabsFor({ item, machine, tool, checks, complexity }) {
+function tabsFor({ item, machine, tool, checks, complexity, toolInArea }) {
   const tabs = [];
   if (item.kind === "example") tabs.push("pasos");
   if (machine) tabs.push("ejecucion");
@@ -27,7 +28,7 @@ function tabsFor({ item, machine, tool, checks, complexity }) {
   if (machine) tabs.push("tabla", "definicion", "transiciones", "alfabetos");
   if (item.kind === "exercise" && machine) tabs.push("guardados");
   if (machine && tool) tabs.push("herramienta");
-  if (checks.length && machine) tabs.push("respuestas");
+  if (checks.length && (machine || toolInArea)) tabs.push("respuestas");
   if (complexity) tabs.push("complejidad");
   if (item.kind === "exercise") tabs.push("solucion", "pista");
   return tabs;
@@ -62,27 +63,34 @@ function Workspace({ items, index, item, parts, partIndex, store, onGo, onPart, 
   const machine = part.machine ?? null;
   const exercise = item.exercise;
   const partKey = item.kind === "exercise" ? `${exercise.id}.${part.id}` : `ejemplo.${item.example.title}`;
-  const tool = part.tool ?? (item.kind === "exercise" && exercise.tool && parts.every((p) => !p.tool) ? exercise.tool : null);
+  const ownTool = part.tool ?? (item.kind === "exercise" && exercise.tool && parts.every((p) => !p.tool) ? exercise.tool : null) ?? (item.kind === "example" ? item.section.tool ?? null : item.section.tool ?? null);
+  const tool = ownTool;
+  const [activeTool, setActiveTool] = useState(machine ? null : ownTool?.type ?? null);
+  const tools = machine ? [] : [
+    ...GENERIC_TOOLS,
+    ...(ownTool && !GENERIC_TOOLS.some((t) => t.id === ownTool.type) ? [{ id: ownTool.type, label: TOOL_LABEL[ownTool.type] ?? "Herramienta del ejercicio", icon: OWN_TOOL_ICON }] : []),
+  ];
+  const toolConfig = activeTool ? (ownTool?.type === activeTool ? ownTool : { type: activeTool }) : null;
   const checks = (part.checks ?? []).map((check) => ({ ...check, key: `${partKey}.${check.id}` }));
   const hint = hintOf(item, part);
-  const tabs = tabsFor({ item, machine, tool, checks, complexity: machine?.complexity });
+  const tabs = tabsFor({ item, machine, tool: machine ? tool : null, checks, complexity: machine?.complexity, toolInArea: !!toolConfig });
   const [tab, setTab] = useState(tabs[0] ?? "solucion");
   const current = tabs.includes(tab) ? tab : tabs[0];
   const openTab = (id) => { setTab(id); setPanelOpen(true); };
   const canCheck = !!machine?.spec || checks.length > 0;
-  const onCheck = () => openTab(machine?.spec ? "resultado" : checks.length ? "respuestas" : current);
+  const onCheck = () => openTab(machine?.spec ? "resultado" : checks.length && tabs.includes("respuestas") ? "respuestas" : current);
 
   const body = (
     <>
       <ExerciseBar items={items} index={index} item={item} progress={progress} onGo={onGo} onSetDone={setDone} partIndex={partIndex} onPart={onPart} canCheck={canCheck} onCheck={onCheck} />
       <div className="relative flex min-h-0 flex-1 max-md:flex-col md:flex-row">
-        <SessionToolbar hasHint={!!hint} hintActive={panelOpen && current === "pista"} onHint={() => openTab(tabs.includes("pista") ? "pista" : current)} onOpenTab={openTab} />
+        <SessionToolbar tools={tools} activeTool={activeTool} onTool={(id) => setActiveTool(id === activeTool ? null : id)} hasHint={!!hint} hintActive={panelOpen && current === "pista"} onHint={() => openTab(tabs.includes("pista") ? "pista" : current)} onOpenTab={openTab} />
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {machine ? <SessionCanvas /> : (
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 md:p-4">
-              {tool ? <ToolPanel key={partKey} tool={tool} defaultOpen /> : null}
-              {checks.map((check) => <AnswerBox key={check.key} check={check} value={progress.answers[check.key] ?? ""} onChange={(text) => setAnswer(check.key, text)} />)}
-              {!tool && checks.length === 0 && <p className="text-sm text-zinc-500">Este ejercicio se resuelve en papel: leé el enunciado y comparalo con la solución del panel.</p>}
+              {toolConfig ? <ToolPanel key={`${partKey}.${toolConfig.type}`} tool={toolConfig} defaultOpen /> : null}
+              {!toolConfig && checks.map((check) => <AnswerBox key={check.key} check={check} value={progress.answers[check.key] ?? ""} onChange={(text) => setAnswer(check.key, text)} />)}
+              {!toolConfig && checks.length === 0 && <p className="text-sm text-zinc-500">Este ejercicio se resuelve en papel: leé el enunciado y comparalo con la solución del panel. En la barra de la izquierda tenés las herramientas.</p>}
             </div>
           )}
           <button

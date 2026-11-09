@@ -2,6 +2,7 @@ import { UNIT2_SECTIONS } from "./unit2/index.js";
 import { UNIT3_SECTIONS } from "./unit3/index.js";
 import { UNIT4_SECTIONS } from "./unit4/index.js";
 import { UNIT5_SECTIONS } from "./unit5/index.js";
+import { HINTS } from "./hints.js";
 import { UNIT6_SECTIONS } from "./unit6/index.js";
 
 // Unidades del sandbox. Una unidad se activa cuando tiene todas sus secciones cargadas; las demás
@@ -18,3 +19,6 @@ export const unitByNumber = (n) => UNITS.find((u) => u.n === n);
 export const isActive = (unit) => unit.sections.length > 0;
 export const ALL_SECTIONS = UNITS.flatMap((u) => u.sections);
 export const ALL_EXERCISES = ALL_SECTIONS.flatMap((s) => s.exercises);
+
+// Carga en cada ejercicio su pista (campo `hint`), escrita en hints.js.
+for (const unit of UNITS) for (const section of unit.sections) for (const exercise of section.exercises) if (HINTS[exercise.id]) exercise.hint = HINTS[exercise.id];
