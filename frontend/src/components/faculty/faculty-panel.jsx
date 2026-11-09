@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { StatusBadge, SubjectCard } from "@/components/faculty/subject-card";
 import { SubjectDetail } from "@/components/faculty/subject-detail";
 import { SubjectManagerModal } from "@/components/faculty/subject-manager-modal";
+import { SslSandbox } from "@/components/ssl/ssl-sandbox";
 import { api } from "@/lib/api";
 import { ALL_FILTER, ELECTIVES_FILTER, FACULTY_FILTERS, facultyGroups, formatGrade, isValidFilter, REQUIRED_ELECTIVE_CREDITS, sortSubjects, summarize } from "@/lib/faculty";
 
@@ -63,6 +64,7 @@ export function FacultyPanel() {
   const [selectedId, setSelectedId] = useState(null);
   const [study, setStudy] = useState({}); // subject_id -> { total_seconds, week_seconds, pending_tasks }
   const [manager, setManager] = useState(null); // { initialForm } mientras el modal está abierto
+  const [sandboxOpen, setSandboxOpen] = useState(false); // vista del sandbox de la materia abierta
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +103,7 @@ export function FacultyPanel() {
   // Las anotaciones no cambian nada de otras materias: se aplican sin volver a pedir la lista.
   const applyNotes = (subjectId, notes) => setSubjects((current) => current.map((subject) => (subject.id === subjectId ? { ...subject, notes } : subject)));
   const openSubject = (subjectId) => {
+    setSandboxOpen(false);
     setSelectedId(subjectId);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -155,6 +158,10 @@ export function FacultyPanel() {
     />
   );
 
+  if (selected && sandboxOpen) {
+    return <SslSandbox onBack={() => setSandboxOpen(false)} />;
+  }
+
   if (selected) {
     return (
       <>
@@ -162,11 +169,12 @@ export function FacultyPanel() {
           key={selected.id}
           subject={selected}
           subjects={subjects}
-          onBack={() => setSelectedId(null)}
+          onBack={() => { setSandboxOpen(false); setSelectedId(null); }}
           onEdit={() => setManager({ initialForm: selected })}
           onChange={applySubject}
           onOpen={openSubject}
           onNotesSaved={applyNotes}
+          onSandbox={() => { setSandboxOpen(true); window.scrollTo({ top: 0 }); }}
           study={study[selected.id]}
         />
         {modal}

@@ -1,0 +1,186 @@
+// Autómatas: las páginas 36 a 45 de la guía son el práctico de la Unidad 3 (máquinas secuenciales, AFD, minimización
+// y autómatas bidireccionales). Se cargan acá con su enunciado y su solución. Los ejercicios que piden dibujar un
+// autómata se muestran con la nota de que se resolverán con el editor de autómatas (próxima etapa).
+const PENDING = "Se resolverá con el editor de autómatas (próxima etapa).";
+
+const T10A = { name: "fA", alphabet: ["0", "1", "2"], start: "A", accepting: ["D", "F", "G"], rows: [["A", "A", "B", "F"], ["B", "B", "A", "G"], ["C", "E", "C", "B"], ["D", "F", "G", "B"], ["E", "C", "B", "E"], ["F", "F", "G", "F"], ["G", "F", "F", "G"]] };
+const T10B = { name: "fB", alphabet: ["0", "1", "2"], start: "A", accepting: ["B", "C", "D", "G"], rows: [["A", "E", "B", "F"], ["B", "C", "D", "B"], ["C", "D", "B", "B"], ["D", "B", "C", "C"], ["E", "A", "D", "E"], ["F", "F", "C", "A"], ["G", "C", "B", "E"]] };
+const T11 = [
+  { name: "fA", alphabet: ["0", "1"], start: "A", accepting: ["C", "E"], rows: [["A", "B", "C"], ["B", "B", "D"], ["C", "E", "B"], ["D", "C", "B"], ["E", "C", "B"]] },
+  { name: "fB", alphabet: ["0", "1"], start: "A", accepting: ["F"], rows: [["A", "B", "F"], ["B", "C", "E"], ["C", "D", "E"], ["D", "B", "E"], ["E", "F", "D"], ["F", "F", "B"]] },
+  { name: "fC", alphabet: ["0", "1"], start: "A", accepting: ["C", "E"], rows: [["A", "C", "B"], ["B", "E", "B"], ["C", "E", "F"], ["D", "B", "A"], ["E", "C", "F"], ["F", "F", "B"], ["G", "G", "A"]] },
+  { name: "fD", alphabet: ["0", "1"], start: "A", accepting: ["D", "E", "F"], rows: [["A", "F", "B"], ["B", "E", "C"], ["C", "D", "A"], ["D", "E", "C"], ["E", "F", "B"], ["F", "D", "E"]] },
+  { name: "fE", alphabet: ["0", "1"], start: "A", accepting: ["C", "D"], rows: [["A", "C", "A"], ["B", "F", "G"], ["C", "D", "E"], ["D", "C", "F"], ["E", "F", "G"], ["F", "E", "G"], ["G", "C", "G"]] },
+];
+const T19 = [
+  { name: "f1", alphabet: ["0", "1"], start: "p", accepting: ["r"], rows: [["p", "r", "p"], ["q", "q", "p"], ["r", "r", "q"]] },
+  { name: "f2", alphabet: ["0", "1"], start: "p", accepting: ["s"], rows: [["p", "q", "s"], ["q", "q", "r"], ["r", "s", "q"], ["s", "s", "q"]] },
+];
+const T20 = [
+  { name: "f1", alphabet: ["1", "2"], start: "p", accepting: ["r"], rows: [["p", "q", "r"], ["q", "r", "p"], ["r", "p", "r"]] },
+  { name: "f2", alphabet: ["1", "2"], start: "A", accepting: ["D"], rows: [["A", "A", "B"], ["B", "D", "B"], ["C", "D", "C"], ["D", "B", "B"]] },
+];
+
+const minimizeTool = (tables) => ({ type: "dfa", tables });
+const drawing = (id, number, page, statement, extra = {}) => ({ id, number, page, statement, pending: true, parts: [{ id: "", prompt: "", checks: [], solution: extra.solution ?? PENDING }], ...extra });
+
+export const AUTOMATAS = {
+  id: "automatas",
+  title: "Autómatas (guía de Unidad 3)",
+  exerciseRange: "1 a 22",
+  context: "Estas páginas de la guía (36 a 45) corresponden a la Unidad 3: Máquinas Secuenciales y Autómatas Finitos Deterministas. Un AFD se define como (ΣE, Q, q0, A, f): alfabeto de entrada, estados, estado inicial, estados finales y función de transición. Los numerados con * en las tablas son finales y la flecha → marca el inicial.",
+  tool: minimizeTool([T19[0]]),
+  example: {
+    title: "Ejemplo resuelto: ejercicio 19, minimización y equivalencia",
+    page: 42,
+    statement: "Comprobar si los AFD cuyas funciones de transición se presentan en la tabla 3.24 son equivalentes entre sí. Para ello, eliminar en cada uno los estados no conexos (si los hubiese) y luego construir los conjuntos cocientes necesarios para minimizar cada autómata.\nAFD1 = ({0, 1}, {p, q, r}, p, {r}, f1)    AFD2 = ({0, 1}, {p, q, r, s}, p, {s}, f2)",
+    tables: T19,
+    steps: [
+      { title: "AFD1: conexo", text: "El AFD1 es conexo, por lo que no hay estados que deban eliminarse." },
+      { title: "AFD1: cociente inicial", text: "Q/E0 = {{p, q}, {r}} = P1⁰ ∪ P2⁰, donde P1⁰ = Q − {r} y P2⁰ = {r}, es decir P1⁰ = {p, q} y P2⁰ = {r}." },
+      { title: "AFD1: comportamiento", text: "f1(p, 0) = r ∈ P2⁰    f1(q, 0) = q ∈ P1⁰\nf1(p, 1) = q ∈ P1⁰    f1(q, 1) = r ∈ P2⁰\nLos elementos de P1⁰ tienen diferente comportamiento ante una entrada 0 y ante una entrada 1, luego Q/E1 = {{p}, {q}, {r}}. Los estados p y q no son equivalentes: el AFD1 ya es mínimo." },
+      { title: "AFD2: conexo y cociente inicial", text: "El AFD2 es conexo. Q/E0 = {{p, q, r}, {s}}, donde P1⁰ = {p, q, r} y P2⁰ = {s}." },
+      { title: "AFD2: comportamiento", text: "f2(p, 0) = q ∈ P1⁰   f2(q, 0) = q ∈ P1⁰   f2(r, 0) = s ∈ P2⁰\nf2(p, 1) = s ∈ P2⁰   f2(q, 1) = r ∈ P1⁰   f2(r, 1) = q ∈ P1⁰\nLos tres elementos de P1⁰ tienen diferente comportamiento, luego Q/E1 = {{p}, {q}, {r}, {s}}. El AFD2 ya es mínimo." },
+      { title: "Conclusión", text: "Los dos autómatas comparados ya son mínimos y tienen diferente cantidad de estados, por lo que no se trata de máquinas equivalentes." },
+    ],
+  },
+  exercises: [
+    drawing("u2-a1", 1, 36, "Analizar el comportamiento del dosificador de la Figura 3.23 (válvulas A y B, con posiciones 0 y 1) a través de una máquina secuencial y presentar los resultados en una tabla similar a la 3.5 en la que se muestren el contenido, largo y composición de cada cadena de salida. Comparar el desempeño de este dosificador con el dispositivo similar ya estudiado en el Ejemplo 3.2.", { figure: "Figura 3.23 (pág. 36 de la guía)" }),
+    drawing("u2-a2", 2, 36, "Siendo ΣE = {1}, se pide:\na) Diseñar un AFD que reconozca cadenas compuestas por un número impar de 1s (unos).\nb) Diseñar un AFD que reconozca palabras compuestas por un número par de 1s (unos)."),
+    drawing("u2-a3", 3, 36, "Siendo ΣE = {a, b}, se pide:\na) Diseñar un AFD que reconozca cadenas compuestas por un número impar de a (aes).\nb) Diseñar un AFD que reconozca palabras compuestas por un número par de a (aes)."),
+    drawing("u2-a4", 4, 36, "Diseñar un AFD que reconozca cadenas formadas por 4 bits, para cada una de las siguientes condiciones:\na) El primer bit igual al último\nb) El segundo bit igual al tercero\nc) Los dos primeros bits iguales a los dos últimos"),
+    drawing("u2-a5", 5, 36, "Construir un AFD que reconozca un lenguaje compuesto por símbolos a y b (ΣE = {a, b}), que excluya del mismo todas aquellas cadenas que contengan las subcadenas: aa o bb. Las palabras a ser reconocidas no deben tener una longitud predeterminada."),
+    {
+      id: "u2-a6",
+      number: 6,
+      page: 36,
+      statement: "Proponer un autómata finito destinado a aceptar cada uno de los siguientes lenguajes y hacer una descripción alternativa según se indica:\na) L1 = { 0^{i} 1 0^{j} / i ≥ 1, j ≥ 1 } ; determinar su expresión regular.\nb) L2 = L( 01(01)*11(11)* ) ; determinar su expresión algebraica.",
+      pending: true,
+      dubious: "En el texto extraído se perdieron los símbolos de L1 (exponentes y ≥); se reconstruyeron mirando la página.",
+      tool: { type: "regex", regex: "01(01)*11(11)*" },
+      parts: [{ id: "", prompt: "", checks: [], solution: PENDING }],
+    },
+    {
+      id: "u2-a7",
+      number: 7,
+      page: 37,
+      statement: "Identifique el lenguaje expresado por cada una de las siguientes expresiones regulares y construya el AFD que lo reconozca (grafo y definición formal).\na) L1(0 + (11)* 0)\nb) L2(0 + (11) 0*)\nc) L3(0 (11)* + 0)\nd) L4(0* (11) + 0)\ne) L5(0* (11) 0*)",
+      pending: true,
+      tool: { type: "regex", regex: "0+(11)*0" },
+      parts: [{ id: "", prompt: "", checks: [], solution: `El lenguaje de cada expresión se puede ver con la herramienta (pegá la expresión). ${PENDING}` }],
+    },
+    drawing("u2-a8", 8, 37, "Diseñar un AFD que reconozca el lenguaje L ⊆ {a, b}*, cuyas cadenas α, sin longitud fija, satisfagan simultáneamente las siguientes condiciones:\na) Toda cadena α comienza con a y termina con b.\nb) La secuencia de caracteres aaa no debe ser subcadena de α."),
+    drawing("u2-a9", 9, 37, "Hacer una propuesta para ampliar el expendedor de golosinas del Ejemplo 3.4 de manera de incorporar un tercer producto (bombón <B>) que tiene un precio de venta de 25 centavos. Las monedas reconocidas son las mismas y el expendedor debe devolver las monedas ingresadas en exceso. Mostrar grafo y definición formal del AFD."),
+    {
+      id: "u2-a10",
+      number: 10,
+      page: 37,
+      statement: "Comprobar si los siguientes AFD son equivalentes. Para ello, se deberá minimizar cada autómata, eliminando, en primera instancia, los estados no conexos, si los hubiese, y construir luego los conjuntos cocientes necesarios.\nAFDA = ({0, 1, 2}, {A, B, C, D, E, F, G}, A, {D, F, G}, fA)\nAFDB = ({0, 1, 2}, {A, B, C, D, E, F, G}, A, {B, C, D, G}, fB)",
+      tables: [T10A, T10B],
+      tool: minimizeTool([T10A, T10B]),
+      parts: [{ id: "", prompt: "", checks: [{ id: "eq", label: "¿Son equivalentes?", spec: { kind: "dfa-equivalent", a: T10A, b: T10B } }], solution: "La guía no incluye la solución de este ejercicio. Resultado calculado por el sandbox: ambos AFD se minimizan a dos estados y los autómatas mínimos son distintos, por lo que no son equivalentes. La herramienta muestra los pasos." }],
+    },
+    {
+      id: "u2-a11",
+      number: 11,
+      page: 37,
+      solutionPage: 38,
+      statement: "Determinar cuáles de los cinco AFD presentados son equivalentes entre sí. Minimizar cada autómata, eliminando en primera instancia los estados no conexos, si los hubiese, y luego construir los conjuntos cocientes necesarios.\nAFDA = ({0, 1}, {A, B, C, D, E}, A, {C, E}, fA)\nAFDB = ({0, 1}, {A, B, C, D, E, F}, A, {F}, fB)\nAFDC = ({0, 1}, {A, B, C, D, E, F, G}, A, {C, E}, fC)\nAFDD = ({0, 1}, {A, B, C, D, E, F}, A, {D, E, F}, fD)\nAFDE = ({0, 1}, {A, B, C, D, E, F, G}, A, {C, D}, fE)",
+      tables: T11,
+      tool: minimizeTool(T11),
+      parts: [{ id: "", prompt: "", checks: [], solution: "La guía no incluye la solución de este ejercicio. Resultado calculado por el sandbox: AFDA y AFDB son equivalentes (mínimo de 4 estados); AFDC y AFDE son equivalentes (mínimo de 3 estados); AFDD (6 estados, ya mínimo) no es equivalente a ninguno." }],
+    },
+    drawing("u2-a12", 12, 38, "Construir un AFDB (autómata finito determinista bidireccional) que acepte números binarios pares escritos en su cinta (recuerde que los números binarios pares terminan con cero)."),
+    drawing("u2-a13", 13, 38, "Construir un AFDB que acepte cadenas escritas en código Morse (ΣMorse = {•, −}) que inicien y terminen con el mismo símbolo."),
+    {
+      id: "u2-a14",
+      number: 14,
+      page: 39,
+      solutionPage: 39,
+      statement: "Diseñar un AFD que acepte una cadena formada por 4 bits, debiendo ser:\na) El primer bit igual al tercero\nb) El segundo bit igual al cuarto",
+      drawing: true,
+      parts: [{ id: "", prompt: "", checks: [], solution: "Solución en la guía, pág. 39 (grafos de las Figuras 3.24 y 3.25).\na) AFD = ({0, 1}, {p, q, r, s, t, u, v, w}, p, {v}, f)\nb) AFD = ({0, 1}, {p, q, r, s, t, u, v, w}, p, {v}, f)" }],
+    },
+    {
+      id: "u2-a15",
+      number: 15,
+      page: 39,
+      solutionPage: 39,
+      statement: "Diseñar un AFD que acepte cadenas de largo |α| = 3 tales que contengan dos símbolos consecutivos iguales, siendo ΣE = {a, b}.",
+      drawing: true,
+      parts: [{ id: "", prompt: "", checks: [], solution: "De acuerdo al enunciado, el lenguaje aceptado por el AFD es L = {aab, abb, baa, bba}.\nSolución en la guía, pág. 39 (grafo de la Figura 3.26).\nAFD = ({a, b}, {p, q, r, s, t, u, v}, p, {u}, f)" }],
+    },
+    {
+      id: "u2-a16",
+      number: 16,
+      page: 39,
+      solutionPage: 40,
+      statement: "Siendo el alfabeto de entrada Σ = {0, 1}, construir un AFD que reconozca un lenguaje formado por cadenas que contengan un número par de símbolos 0, y sin símbolos 1 sucesivos.",
+      drawing: true,
+      parts: [{ id: "", prompt: "", checks: [], solution: "Solución en la guía, pág. 40 (grafo de la Figura 3.27).\nAFD = ({0, 1}, {p, q, r, s, t, u, v}, p, {t, u}, f)" }],
+    },
+    {
+      id: "u2-a17",
+      number: 17,
+      page: 40,
+      solutionPage: 40,
+      statement: "Diseñar un AFD que funcione como una central telefónica, que reconozca los números telefónicos de ocho cifras que comienzan con 0600 y terminan en número par.",
+      drawing: true,
+      parts: [{ id: "", prompt: "", checks: [], solution: "Solución en la guía, pág. 40 (grafo de la Figura 3.28).\nAFD = ({0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, {p, q, r, s, t, u, v, w, x, y, z}, p, {z}, f)\nSe sugiere proponer variantes para aceptar otros prefijos (0351, 0800, etc.) con cadenas que terminen en un número par o impar." }],
+    },
+    {
+      id: "u2-a18",
+      number: 18,
+      page: 40,
+      solutionPage: 40,
+      statement: "Identifique el lenguaje expresado por cada una de las siguientes expresiones regulares y construya el AFD que lo reconozca (grafo y definición formal).\na) L1(a (b+c) d)\nb) L2(a (b+c)* d)\nc) L3(a* (b+c) d)\nd) L4(a (b+c) d*)\ne) L5(a* (b+c) d*)",
+      drawing: true,
+      tool: { type: "regex", regex: "a(b+c)d" },
+      parts: [
+        { id: "a", prompt: "L1(a (b+c) d)", tool: { type: "regex", regex: "a(b+c)d" }, checks: [], solution: "L1 = {a} . {b, c} . {d} = {ab, ac} . {d} = {abd, acd}\nAF = ({a, b, c, d}, {p, q, r, s}, p, {s}, f). Grafo en la Figura 3.29 (pág. 40)." },
+        { id: "b", prompt: "L2(a (b+c)* d)", tool: { type: "regex", regex: "a(b+c)*d" }, checks: [], solution: "L2 = {a} . {b, c}* . {d} = {ad, abd, acd, abbd, abcd, acbd, accd, abbbd, abcbd, abccd, …}\nAF = ({a, b, c, d}, {p, q, r}, p, {r}, f). Grafo en la Figura 3.30 (pág. 41)." },
+        { id: "c", prompt: "L3(a* (b+c) d)", tool: { type: "regex", regex: "a*(b+c)d" }, checks: [], solution: "L3 = {a}* . {b, c} . {d} = {bd, cd, abd, acd, aabd, aacd, aaabd, aaacd, aaaabd, aaaacd, …}\nAF = ({a, b, c, d}, {p, q, r}, p, {r}, f). Grafo en la Figura 3.31 (pág. 41)." },
+        { id: "d", prompt: "L4(a (b+c) d*)", tool: { type: "regex", regex: "a(b+c)d*" }, checks: [], solution: "L4 = {a} . {b, c} . {d}* = {ab, ac, abd, acd, abdd, acdd, abddd, acddd, abdddd, acdddd, …}\nAF = ({a, b, c, d}, {p, q, r}, p, {r}, f). Grafo en la Figura 3.32 (pág. 41)." },
+        { id: "e", prompt: "L5(a* (b+c) d*)", tool: { type: "regex", regex: "a*(b+c)d*" }, checks: [], solution: "L5 = {a}* . {b, c} . {d}* = {b, c, ab, ac, aab, aac, aaab, aaac, aaaab, aaaac, …, bd, cd, abd, acd, aabd, aacd, …, bdd, cdd, abdd, acdd, …, bddd, cddd, abddd, …}\nAF = ({a, b, c, d}, {p, r}, p, {r}, f). Grafo en la Figura 3.33 (pág. 42)." },
+      ],
+    },
+    {
+      id: "u2-a19",
+      number: 19,
+      page: 42,
+      solutionPage: 42,
+      statement: "Comprobar si los AFD cuyas funciones de transición se presentan en la tabla 3.24 son equivalentes entre sí. Para ello, eliminar en cada uno los estados no conexos (si los hubiese) y luego construir los conjuntos cocientes necesarios para minimizar cada autómata.",
+      tables: T19,
+      tool: minimizeTool(T19),
+      parts: [{ id: "", prompt: "", checks: [{ id: "eq", label: "¿Son equivalentes?", spec: { kind: "dfa-equivalent", a: T19[0], b: T19[1] } }], solution: "AFD1 y AFD2 son conexos y ambos ya son mínimos (Q/E1 = {{p}, {q}, {r}} y {{p}, {q}, {r}, {s}}). Tienen diferente cantidad de estados, por lo que no se trata de máquinas equivalentes." }],
+    },
+    {
+      id: "u2-a20",
+      number: 20,
+      page: 43,
+      solutionPage: 43,
+      statement: "Comprobar si los AFD cuyas funciones de transición se presentan en la tabla 3.25 son equivalentes entre sí. Para ello, eliminar en cada AFD los estados no conexos (si los hubiese) y luego construir los conjuntos cocientes necesarios para minimizar cada autómata.",
+      tables: T20,
+      tool: minimizeTool(T20),
+      parts: [{ id: "", prompt: "", checks: [{ id: "eq", label: "¿Son equivalentes?", spec: { kind: "dfa-equivalent", a: T20[0], b: T20[1] } }], solution: "AFD1 es conexo: Q/E0 = {{p, q}, {r}}; p y q se comportan distinto, luego Q/E1 = {{p}, {q}, {r}} y ya es mínimo.\nAFD2 es no conexo: se elimina el estado C. Q/E0 = {{A, B}, {D}}; A y B se comportan distinto, luego Q/E1 = {{A}, {B}, {D}}.\nAmbos tienen tres estados, pero comparando los grafos mínimos (Figuras 3.34a y 3.34b, pág. 44):\nAFD1: δ1 = 1(21)*1(2)* ; δ2 = 2(12)*(2)*   L(AFD1) = {11, 1211, 121211, …, 12112, 121122, …, 2, 212, 21212, …, 2122, 21222, 212222, …}\nAFD2: β = (1)*(2)⁺1((1+2)(2)*1)*   L(AFD2) = {21, 121, 11221, 1112221, …, 12111, 1122111, …}\nLas cadenas más cortas (11 y 2 contra 21) son distintas: no son máquinas equivalentes." }],
+    },
+    {
+      id: "u2-a21",
+      number: 21,
+      page: 44,
+      solutionPage: 44,
+      statement: "Construir un AFDB que acepte palabras del alfabeto español que terminen con una vocal.",
+      drawing: true,
+      parts: [{ id: "", prompt: "", checks: [], solution: "Solución en la guía, pág. 44 (grafo de la Figura 3.35). x, y, z representan a cualquier letra, cualquier vocal y cualquier consonante del alfabeto español respectivamente: x ∈ Σespañol, y ∈ {a, e, i, o, u}, z ∈ Σespañol − {a, e, i, o, u}.\nAFDB = (Σespañol, Σespañol ∪ {├, ┤}, {p, q, r, u, e}, p, {u}, f)" }],
+    },
+    {
+      id: "u2-a22",
+      number: 22,
+      page: 45,
+      solutionPage: 45,
+      statement: "Construir un AFDB que acepte bytes cuya primera mitad sea igual a la segunda.",
+      drawing: true,
+      parts: [{ id: "", prompt: "", checks: [], solution: "Solución en la guía, pág. 45 (grafo de la Figura 3.36).\nAFDB = (ΣE, Γ, Q, q0, A, f)\nΣE = {0, 1}   Γ = {0, 1, ├, ┤}\nQ = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, e}   q0 = q0   A = {q12}\nf queda definida por su grafo de la Figura 3.36." }],
+    },
+  ],
+};
