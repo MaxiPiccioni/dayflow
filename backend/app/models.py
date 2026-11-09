@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .clock import today, utcnow
 from .database import Base
 
 
@@ -13,7 +14,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     tasks: Mapped[list["Task"]] = relationship(cascade="all, delete-orphan")
     categories: Mapped[list["Category"]] = relationship(cascade="all, delete-orphan")
     habits: Mapped[list["Habit"]] = relationship(cascade="all, delete-orphan")
@@ -38,7 +39,7 @@ class Task(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(200))
-    due_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
+    due_date: Mapped[date] = mapped_column(Date, default=today, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -64,7 +65,7 @@ class Habit(Base):
     name: Mapped[str] = mapped_column(String(100))
     target: Mapped[int] = mapped_column(Integer, default=1)
     unit: Mapped[str] = mapped_column(String(30), default="veces")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     logs: Mapped[list["HabitLog"]] = relationship(cascade="all, delete-orphan")
 
 
@@ -86,7 +87,7 @@ class Transaction(Base):
     kind: Mapped[str] = mapped_column(String(20))
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     method: Mapped[str] = mapped_column(String(20), default="Efectivo")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class SavingEntry(Base):
@@ -105,7 +106,7 @@ class SavingMovement(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     saving_id: Mapped[int] = mapped_column(ForeignKey("saving_entries.id"), index=True)
     amount: Mapped[float] = mapped_column(Float)
-    movement_date: Mapped[date] = mapped_column(Date, default=date.today)
+    movement_date: Mapped[date] = mapped_column(Date, default=today)
 
 
 class Event(Base):
