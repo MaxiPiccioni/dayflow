@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .clock import today, utcnow
@@ -83,7 +83,7 @@ class Transaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     description: Mapped[str] = mapped_column(String(200))
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     kind: Mapped[str] = mapped_column(String(20))
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     method: Mapped[str] = mapped_column(String(20), default="Efectivo")
@@ -95,7 +95,7 @@ class SavingEntry(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    start_amount: Mapped[float] = mapped_column(Float, default=0)
+    start_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     month: Mapped[str] = mapped_column(String(7), index=True)
     movements: Mapped[list["SavingMovement"]] = relationship(cascade="all, delete-orphan")
 
@@ -105,7 +105,7 @@ class SavingMovement(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     saving_id: Mapped[int] = mapped_column(ForeignKey("saving_entries.id"), index=True)
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     movement_date: Mapped[date] = mapped_column(Date, default=today)
 
 
@@ -137,14 +137,14 @@ class PayPeriod(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     start: Mapped[date] = mapped_column(Date)
     end: Mapped[date] = mapped_column(Date)
-    rate: Mapped[float] = mapped_column(Float, default=0)
+    rate: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     closed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    total_hours: Mapped[float] = mapped_column(Float, default=0)
-    expected: Mapped[float] = mapped_column(Float, default=0)
+    total_hours: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("0.00"))
+    expected: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     # paid y balance ya no son fuente de verdad: se calculan en vivo desde hour_payments
     # porque un período cerrado sigue recibiendo pagos. Se quitan en una migración posterior.
-    paid: Mapped[float] = mapped_column(Float, default=0)
-    balance: Mapped[float] = mapped_column(Float, default=0)
+    paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
 
 
@@ -155,7 +155,7 @@ class HourEntry(Base):
     entry_date: Mapped[date] = mapped_column(Date, index=True)
     from_time: Mapped[str] = mapped_column(String(5), default="09:00")
     to_time: Mapped[str] = mapped_column(String(5), default="17:00")
-    hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
     extra: Mapped[bool] = mapped_column(Boolean, default=False)
     holiday: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -165,7 +165,7 @@ class HourPayment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     period_id: Mapped[int] = mapped_column(ForeignKey("pay_periods.id"), index=True)
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     method: Mapped[str] = mapped_column(String(30), default="Transferencia")
     payment_date: Mapped[date] = mapped_column(Date)
 

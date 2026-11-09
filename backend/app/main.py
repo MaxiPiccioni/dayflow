@@ -2,6 +2,7 @@ import calendar
 from collections import defaultdict
 from datetime import date as date_type
 from datetime import timedelta
+from decimal import Decimal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -14,6 +15,7 @@ from .config import settings
 from .database import get_db
 from .deps import current_user
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Subject, Task, Transaction, User
+from .money import ZERO, quantize, to_decimal
 from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
 from .routers import faculty
 from .schemas import (
@@ -174,12 +176,12 @@ def _habit_logs_by_habit_id(db: Session, habit_ids: list[int]) -> dict[int, dict
     return by_habit
 
 
-def _saving_out_from_amount(saving: SavingEntry, current: float) -> SavingEntryOut:
+def _saving_out_from_amount(saving: SavingEntry, current: Decimal) -> SavingEntryOut:
     return SavingEntryOut(id=saving.id, name=saving.name, start_amount=saving.start_amount, current_amount=current, gain=current - saving.start_amount)
 
 
-def _saving_current_amount(db: Session, saving: SavingEntry) -> float:
-    moved = db.scalar(select(func.coalesce(func.sum(SavingMovement.amount), 0.0)).where(SavingMovement.saving_id == saving.id)) or 0.0
+def _saving_current_amount(db: Session, saving: SavingEntry) -> Decimal:
+    moved = db.scalar(select(func.coalesce(func.sum(SavingMovement.amount), ZERO)).where(SavingMovement.saving_id == saving.id)) or ZERO
     return saving.start_amount + moved
 
 
@@ -187,11 +189,11 @@ def _build_saving_out(db: Session, saving: SavingEntry) -> SavingEntryOut:
     return _saving_out_from_amount(saving, _saving_current_amount(db, saving))
 
 
-def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int, float]:
+def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int, Decimal]:
     if not saving_ids:
         return {}
     rows = db.execute(
-        select(SavingMovement.saving_id, func.coalesce(func.sum(SavingMovement.amount), 0.0))
+        select(SavingMovement.saving_id, func.coalesce(func.sum(SavingMovement.amount), ZERO))
         .where(SavingMovement.saving_id.in_(saving_ids))
         .group_by(SavingMovement.saving_id)
     ).all()
@@ -208,7 +210,7 @@ def _rollover_savings(db: Session, user: User, current_month: str) -> None:
         return
     moved_by_id = _moved_amounts_by_saving_id(db, [saving.id for saving in to_roll])
     for saving in to_roll:
-        current_amount = saving.start_amount + moved_by_id.get(saving.id, 0.0)
+        current_amount = saving.start_amount + moved_by_id.get(saving.id, ZERO)
         db.add(SavingEntry(user_id=user.id, name=saving.name, start_amount=current_amount, month=current_month))
     db.commit()
 
@@ -225,7 +227,7 @@ def dashboard(client_today: date_type | None = None, user: User = Depends(curren
     _rollover_savings(db, user, current_month)
     saving_rows = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.month == current_month).order_by(SavingEntry.id)).all()
     moved_by_saving = _moved_amounts_by_saving_id(db, [saving.id for saving in saving_rows])
-    savings = [_saving_out_from_amount(saving, saving.start_amount + moved_by_saving.get(saving.id, 0.0)) for saving in saving_rows]
+    savings = [_saving_out_from_amount(saving, saving.start_amount + moved_by_saving.get(saving.id, ZERO)) for saving in saving_rows]
     return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, savings=savings)
 
 
@@ -699,18 +701,20 @@ def _period_start_for(reference: date_type) -> date_type:
     return reference.replace(day=1)
 
 
-def _entry_duration(entry: HourEntry) -> float:
+def _entry_duration(entry: HourEntry) -> Decimal:
+    """Horas de una jornada. Sin redondear: se redondea el total al cerrar y el valor de cada jornada."""
     if entry.holiday:
-        return 4.0
+        return Decimal(4)
     if entry.hours is not None:
-        return entry.hours
+        return to_decimal(entry.hours)
     from_h, from_m = (int(part) for part in entry.from_time.split(":"))
     to_h, to_m = (int(part) for part in entry.to_time.split(":"))
-    return max(0.0, (to_h * 60 + to_m - from_h * 60 - from_m) / 60)
+    return max(Decimal(0), Decimal(to_h * 60 + to_m - from_h * 60 - from_m) / 60)
 
 
-def _entry_value(entry: HourEntry, rate: float) -> float:
-    return _entry_duration(entry) * rate * (2 if entry.extra else 1)
+def _entry_value(entry: HourEntry, rate: Decimal) -> Decimal:
+    """Lo que vale una jornada, redondeado a centavos (las horas extra pagan el doble)."""
+    return quantize(_entry_duration(entry) * to_decimal(rate) * (2 if entry.extra else 1))
 
 
 # Desde esta fecha los períodos son siempre meses calendario. Antes es historia
@@ -744,7 +748,7 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
     if reference < CALENDAR_PERIODS_FROM:
         raise HTTPException(status_code=404, detail="No hay registros para esa fecha")
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
-    rate = last.rate if last else 0.0
+    rate = last.rate if last else ZERO
     period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
     db.add(period)
     db.commit()
@@ -756,8 +760,8 @@ def _close_period(db: Session, period: PayPeriod, user: User) -> None:
     # Al cerrar se congelan las horas y lo esperado. paid y balance no: los pagos
     # llegan a mes vencido y se calculan en vivo en _build_hours_state.
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date >= period.start, HourEntry.entry_date <= period.end)).all()
-    period.total_hours = sum(_entry_duration(entry) for entry in entries)
-    period.expected = sum(_entry_value(entry, period.rate) for entry in entries)
+    period.total_hours = quantize(sum((_entry_duration(entry) for entry in entries), Decimal(0)))
+    period.expected = sum((_entry_value(entry, period.rate) for entry in entries), ZERO)
     period.closed = True
 
 
@@ -768,14 +772,14 @@ def _build_hours_state(db: Session, user: User, reference: date_type, period: Pa
     closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
     paid_by_period = dict(db.execute(select(HourPayment.period_id, func.sum(HourPayment.amount)).where(HourPayment.user_id == user.id).group_by(HourPayment.period_id)).all())
     # Un período abierto todavía no congeló expected: se calcula con sus jornadas.
-    expected = period.expected if period.closed else sum(_entry_value(entry, period.rate) for entry in entries if period.start <= entry.entry_date <= period.end)
-    paid = paid_by_period.get(period.id, 0.0)
+    expected = period.expected if period.closed else sum((_entry_value(entry, period.rate) for entry in entries if period.start <= entry.entry_date <= period.end), ZERO)
+    paid = paid_by_period.get(period.id, ZERO)
     return HoursStateOut(
         period=PayPeriodOut.model_validate(period).model_copy(update={"paid": paid, "balance": expected - paid}),
         entries=[HourEntryOut.model_validate(entry) for entry in entries],
         payments=[HourPaymentOut.model_validate(payment) for payment in payments],
         closed_periods=[
-            ClosedPeriodOut.model_validate(item).model_copy(update={"paid": paid_by_period.get(item.id, 0.0), "balance": item.expected - paid_by_period.get(item.id, 0.0)})
+            ClosedPeriodOut.model_validate(item).model_copy(update={"paid": paid_by_period.get(item.id, ZERO), "balance": item.expected - paid_by_period.get(item.id, ZERO)})
             for item in closed_periods
         ],
     )

@@ -7,6 +7,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, Str
 from pydantic_core import PydanticCustomError
 
 from .clock import today
+from .money import Hours, Money
 
 
 class UserCreate(BaseModel):
@@ -145,7 +146,7 @@ class ShoppingItemOut(ShoppingItemCreate):
 
 class TransactionCreate(BaseModel):
     description: str = Field(min_length=1, max_length=200)
-    amount: float = Field(gt=0)
+    amount: Money = Field(gt=0)
     kind: str = Field(pattern="^(income|expense)$")
     category: str | None = Field(default="General", max_length=50)
     method: str = Field(default="Efectivo", pattern="^(Efectivo|Digital|Otro)$")
@@ -159,31 +160,31 @@ class TransactionOut(TransactionCreate):
 
 class SavingEntryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    start_amount: float = Field(default=0)
+    start_amount: Money = Field(default=Decimal("0.00"))
 
 
 class SavingEntryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    start_amount: float | None = None
+    start_amount: Money | None = None
 
 
 class SavingEntryOut(BaseModel):
     id: int
     name: str
-    start_amount: float
-    current_amount: float
-    gain: float
+    start_amount: Money
+    current_amount: Money
+    gain: Money
 
 
 class SavingMovementCreate(BaseModel):
-    amount: float
+    amount: Money
     movement_date: date = Field(default_factory=today)
 
 
 class SavingMovementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
-    amount: float
+    amount: Money
     movement_date: date
 
 
@@ -239,7 +240,7 @@ class HourEntryCreate(BaseModel):
     entry_date: date
     from_time: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
     to_time: str = Field(default="17:00", pattern=r"^\d{2}:\d{2}$")
-    hours: float | None = Field(default=None, ge=0)
+    hours: Hours | None = Field(default=None, ge=0)
     extra: bool = False
     holiday: bool = False
 
@@ -250,7 +251,7 @@ class HourEntryOut(HourEntryCreate):
 
 
 class HourPaymentCreate(BaseModel):
-    amount: float = Field(gt=0)
+    amount: Money = Field(gt=0)
     method: str = Field(default="Transferencia", max_length=30)
     payment_date: date
 
@@ -269,11 +270,11 @@ class PayPeriodOut(BaseModel):
     id: int
     start: date
     end: date
-    rate: float
+    rate: Money
     closed: bool
     # Calculados en vivo desde los pagos (ver _build_hours_state).
-    paid: float = 0
-    balance: float = 0
+    paid: Money = Decimal("0.00")
+    balance: Money = Decimal("0.00")
 
 
 class ClosedPeriodOut(BaseModel):
@@ -281,15 +282,15 @@ class ClosedPeriodOut(BaseModel):
     id: int
     start: date
     end: date
-    rate: float
-    total_hours: float
-    expected: float
-    paid: float
-    balance: float
+    rate: Money
+    total_hours: Hours
+    expected: Money
+    paid: Money
+    balance: Money
 
 
 class RateUpdate(BaseModel):
-    rate: float = Field(ge=0)
+    rate: Money = Field(ge=0)
     reference_date: date | None = None
 
 
