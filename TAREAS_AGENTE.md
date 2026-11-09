@@ -249,3 +249,13 @@ Cambiar los "buscar o crear" a un upsert o a manejo de `IntegrityError` con rein
 - [ ] Fase 6: README y documentación
 
 > Estado actual y pendientes ordenados: ver `ESTADO.md`. Fase 3 se divide en 3-A (hecha), 3-B fechas/UTC, 3-C dinero, 3-D constraints+Postgres, 3-E categorías FK, 3-F ahorros. Facultad partes 1–3 hechas.
+
+
+---
+
+## Plan de 4 lotes encadenados (ramas apiladas)
+
+1. **Lote 1 · `refactor/rutas`** (hecho): rutas del App Router, layout y Provider compartidos, 404, títulos. Reporte: `REPORTE_RUTAS.md`.
+2. **Lote 2 · `feat/sandbox-marco`** (sale del 1): el sandbox de SSL (Unidades 3 a 6) se abre en un popup a pantalla completa: barra lateral angosta con los comandos (los dos últimos: Play/Stop y Pistas), rectángulo del ejercicio con Comprobar y Siguiente/Anterior/índice, lienzo, panel derecho retráctil (tabla, definición, cadena, pila/cinta, resultados) y cajones en 375 px. La unidad queda en la URL y Atrás cierra el popup.
+3. **Lote 3 · `feat/sandbox-pistas`** (sale del 2): una pista por ejercicio (Unidades 2 a 6) mostrada con el botón de pistas, y la Unidad 2 en el mismo marco compacto.
+4. **Lote 4 · `fix/fase3-datos`** (sale de `main`): 3-C dinero con Numeric, 3-D constraints únicos y CI con Postgres, 3-E categorías con FK, 3-F ahorros (quitar xfail). Migraciones probadas en SQLite con y sin datos.

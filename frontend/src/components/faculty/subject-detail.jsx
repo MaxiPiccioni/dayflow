@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronUp, FlaskConical, Folder, HardDrive, Pencil, Plus, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,8 +17,8 @@ import { allowsGrade, formatGrade, inputClass, levelLabel, planSummary, STATUS, 
 const smallButton = "grid h-7 w-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
 // Detalle de una materia dentro del panel. Cada cambio va al backend y onChange recibe la materia actualizada.
-// onOpen abre el detalle de otra materia (desde las correlativas); onNotesSaved aplica las anotaciones guardadas.
-export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onOpen, onNotesSaved, onSandbox, study }) {
+// "Volver", el Sandbox y las correlativas son enlaces a otras rutas; onNotesSaved aplica las anotaciones guardadas.
+export function SubjectDetail({ subject, subjects, onEdit, onChange, onNotesSaved, study }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [gradeDraft, setGradeDraft] = useState(null);
@@ -80,10 +81,10 @@ export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onO
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button type="button" onClick={onBack} className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-700"><ArrowLeft size={15} /> Volver</button>
+        <Link href="/facultad" className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-700"><ArrowLeft size={15} /> Volver</Link>
         <div className="flex flex-wrap items-center gap-2">
-          {onSandbox && isSslSubject(subject) && (
-            <button type="button" onClick={onSandbox} className="flex items-center gap-1 rounded-xl bg-lime-200 px-3 py-2 text-sm font-semibold text-lime-950"><FlaskConical size={14} /> Sandbox</button>
+          {isSslSubject(subject) && (
+            <Link href={`/facultad/${subject.id}/sandbox`} className="flex items-center gap-1 rounded-xl bg-lime-200 px-3 py-2 text-sm font-semibold text-lime-950"><FlaskConical size={14} /> Sandbox</Link>
           )}
           <button type="button" onClick={onEdit} className="flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white dark:bg-lime-400 dark:text-zinc-950"><Pencil size={14} /> Editar materia</button>
         </div>
@@ -141,7 +142,7 @@ export function SubjectDetail({ subject, subjects, onBack, onEdit, onChange, onO
       </Card>
 
       <Card className="space-y-6">
-        <SubjectRequirements subject={subject} subjects={subjects} onOpen={onOpen} />
+        <SubjectRequirements subject={subject} subjects={subjects} />
       </Card>
 
       <Card>

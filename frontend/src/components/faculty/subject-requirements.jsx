@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CheckCircle2, Circle } from "lucide-react";
 import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
 import { REQUIREMENT_LABEL, showsAvailability, subjectLabel } from "@/lib/faculty";
@@ -5,8 +6,8 @@ import { REQUIREMENT_LABEL, showsAvailability, subjectLabel } from "@/lib/facult
 const rowClass = "flex w-full items-center gap-3 rounded-xl border border-zinc-200 p-2 text-left hover:border-lime-400 dark:border-zinc-800 dark:hover:border-lime-400/60";
 
 // Correlativas de una materia ("Aprobadas requeridas" y "Cursadas requeridas") y las materias que la
-// tienen como correlativa ("Es correlativa de"). Cada fila abre el detalle de esa materia.
-export function SubjectRequirements({ subject, subjects, onOpen }) {
+// tienen como correlativa ("Es correlativa de"). Cada fila es un enlace al detalle de esa materia.
+export function SubjectRequirements({ subject, subjects }) {
   const byId = new Map(subjects.map((item) => [item.id, item]));
   const isMissing = (id, kind) => subject.missing.some((item) => item.id === id && item.kind === kind);
   const groups = [
@@ -40,7 +41,7 @@ export function SubjectRequirements({ subject, subjects, onOpen }) {
                 const met = !isMissing(required.id, kind);
                 return (
                   <li key={required.id}>
-                    <button type="button" onClick={() => onOpen(required.id)} className={rowClass}>
+                    <Link href={`/facultad/${required.id}`} className={rowClass}>
                       <SubjectIcon subject={required} size={16} className="h-8 w-8 shrink-0 rounded-xl" />
                       <span className="min-w-0 flex-1 truncate text-sm">{subjectLabel(required)}</span>
                       <StatusBadge status={required.status} />
@@ -49,7 +50,7 @@ export function SubjectRequirements({ subject, subjects, onOpen }) {
                       ) : (
                         <Circle size={17} aria-label="Falta" className="shrink-0 text-zinc-300 dark:text-zinc-600" />
                       )}
-                    </button>
+                    </Link>
                   </li>
                 );
               })}
@@ -66,11 +67,11 @@ export function SubjectRequirements({ subject, subjects, onOpen }) {
           <ul className="mt-2 space-y-2">
             {requiredBy.map((item) => (
               <li key={item.id}>
-                <button type="button" onClick={() => onOpen(item.id)} className={rowClass}>
+                <Link href={`/facultad/${item.id}`} className={rowClass}>
                   <SubjectIcon subject={item} size={16} className="h-8 w-8 shrink-0 rounded-xl" />
                   <span className="min-w-0 flex-1 truncate text-sm">{subjectLabel(item)}</span>
                   <StatusBadge status={item.status} />
-                </button>
+                </Link>
               </li>
             ))}
           </ul>

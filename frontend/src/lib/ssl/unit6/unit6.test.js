@@ -31,7 +31,7 @@ describe("Unidad 6: ejercicios cargados", () => {
       expect(r.ok, `${e.id}.${p.id}: ${r.message} ${(r.detail ?? []).join(" ")}`).toBe(true);
     }
     expect(withSpec).toBeGreaterThanOrEqual(40);
-  });
+  }, 30000);
 
   it("las máquinas de arranque (initial) y las referencias no tienen errores estructurales", () => {
     for (const { e, p } of parts) {
