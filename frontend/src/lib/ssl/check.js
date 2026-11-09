@@ -1,8 +1,10 @@
 import { fmtWord, normalizeInput, parseWord, parseWordList } from "./notation.js";
 import { evalStringExpr } from "./strings.js";
 import { closureLanguage, concatLanguages, enumerateFormula, intersectSets, powerLanguage, sigmaClosure, unionSets } from "./languages.js";
-import { analyzeRecursion, classify, compareGrammars, detectAmbiguity, generateLanguage, parseGrammar, recursionLabel } from "./grammar.js";
+import { RECURSION_OPTIONS, analyzeRecursion, classify, compareGrammars, detectAmbiguity, generateLanguage, parseGrammar, recursionKey, recursionLabel, successors } from "./grammar.js";
+import { cleanGrammar, hasIndirectLeftRecursion, isFNC, isFNG } from "./transform.js";
 import { compareRegex, compileRegex } from "./regex.js";
+import { equivalent } from "./automata.js";
 
 // Comprobación de respuestas. Cada ejercicio declara un `check` (datos puros) y checkAnswer lo evalúa:
 // devuelve { ok, message, detail? }. Los textos están en español rioplatense.
@@ -35,6 +37,25 @@ const grammarOf = (fields) => {
   return parsed.grammar;
 };
 const ruleSet = (g) => new Set(g.productions.map((p) => `${p.lhs}:=${p.rhs}`));
+
+// Si el ejercicio pide una forma (FNC, FNG, sin recursividad por izquierda), devuelve qué incumple la gramática del usuario.
+function formViolation(form, g) {
+  const show = (p) => `${p.lhs} := ${fmtWord(p.rhs)}`;
+  if (form === "fnc") {
+    const rule = g.productions.find((p) => !isFNC({ ...g, productions: [p] }));
+    return rule ? `no está en Forma Normal de Chomsky: ${show(rule)} no es de la forma A := BC, A := a ni S := λ.` : "";
+  }
+  if (form === "fng") {
+    const rule = g.productions.find((p) => !isFNG({ ...g, productions: [p] }));
+    return rule ? `no está en Forma Normal de Greibach: ${show(rule)} no es de la forma A := aη.` : "";
+  }
+  if (form === "noleftrec") {
+    const rule = g.productions.find((p) => p.rhs !== "" && Array.from(p.rhs)[0] === p.lhs);
+    if (rule) return `todavía tiene recursividad por izquierda: ${show(rule)}.`;
+    return hasIndirectLeftRecursion(g) ? "todavía tiene recursividad por izquierda en más de un paso." : "";
+  }
+  return "";
+}
 
 const CHECKERS = {
   number(spec, answer) {
@@ -111,6 +132,52 @@ const CHECKERS = {
     return answer === expected ? ok(`¡Correcto! ${recursionLabel(analysis)}.`) : bad(analysis.recursive ? "Sí es recursiva: buscá un no terminal que vuelva a aparecer en sus propias derivaciones." : "No es recursiva: ningún no terminal se alcanza a sí mismo.");
   },
 
+  // Tipo de recursividad con los nombres de la guía (ejercicios 10 y 11).
+  "recursion-type"(spec, answer) {
+    if (!answer) return bad("Elegí una opción.");
+    const analysis = analyzeRecursion(grammarOf(spec.grammar));
+    const expected = recursionKey(analysis);
+    const label = RECURSION_OPTIONS.find(([key]) => key === expected)[1];
+    if (answer === expected) return ok(`¡Correcto! ${label}.`, { detail: analysis.findings?.map((f) => `${f.symbol}: ${f.rules.join(", ")}`) });
+    return bad(analysis.recursive ? "Sí es recursiva, pero no de ese tipo. Mirá en qué lugar de la parte derecha vuelve a aparecer el no terminal." : "No es recursiva: ningún no terminal se alcanza a sí mismo.");
+  },
+
+  // Derivación escrita por el usuario: S → aA → ab. Cada paso tiene que ser una derivación directa.
+  derivation(spec, answer) {
+    const g = grammarOf(spec.grammar);
+    const forms = answer.split(/→|->|⇒/).map((f) => f.replace(/\s+/g, "")).map((f) => (f === "λ" ? "" : f));
+    if (forms.length < 2 || forms.some((f, i) => f === "" && i < forms.length - 1)) return bad("Escribí la derivación con flechas, por ejemplo S → aA → ab.");
+    if (forms[0] !== g.axiom) return bad(`La derivación empieza en el axioma ${g.axiom}.`);
+    for (let i = 1; i < forms.length; i++) {
+      if (!successors(g, forms[i - 1]).some((step) => step.form === forms[i])) return bad(`El paso ${fmtWord(forms[i - 1])} → ${fmtWord(forms[i])} no es una derivación directa con las producciones dadas.`);
+    }
+    if (forms[forms.length - 1] !== spec.target) return bad(`La derivación es válida, pero termina en ${fmtWord(forms[forms.length - 1])} y la cadena pedida es ${spec.target}.`);
+    return ok("¡Correcto! Cada paso es una derivación directa y llegás a la cadena.");
+  },
+
+  // Dato que sale de aplicar el procedimiento de gramática limpia: reglas innecesarias, superfluos o inaccesibles.
+  "clean-field"(spec, answer) {
+    const result = cleanGrammar(grammarOf(spec.grammar));
+    let expected = result[spec.field] ?? [];
+    if (spec.field === "unnecessary") expected = expected.map((r) => `${r.lhs}:=${r.rhs}`);
+    const nothing = /^(ninguno|ninguna|ningunos|ningunas|no hay|-|∅|vac[ií]o)$/i;
+    const given = nothing.test(answer.trim()) ? [] : answer.split(spec.field === "unnecessary" ? /[,;]/ : /[\s,;]+/).map((t) => t.replace(/\s+/g, "").replace(/→/g, ":=")).filter(Boolean);
+    const got = new Set(given);
+    const want = new Set(expected);
+    if (!answer.trim()) return bad("Escribí los símbolos separados por comas, o \"ninguno\" si no hay.");
+    const missing = [...want].filter((x) => !got.has(x));
+    const extra = [...got].filter((x) => !want.has(x));
+    if (!missing.length && !extra.length) return ok(want.size ? "¡Correcto!" : "¡Correcto! No hay ninguno.");
+    return bad(extra.length ? `No corresponde: ${extra.join(", ")}.` : `Te falta${missing.length > 1 ? "n" : ""} ${missing.length}.`);
+  },
+
+  "dfa-equivalent"(spec, answer) {
+    const result = equivalent(spec.a, spec.b);
+    const expected = result.equal ? "si" : "no";
+    if (!answer) return bad("Elegí una opción.");
+    return answer === expected ? ok(result.equal ? `¡Correcto! Son equivalentes: ${result.reason}.` : `¡Correcto! No son equivalentes: ${result.reason}.`) : bad(result.equal ? "Sí son equivalentes: al minimizarlos quedan iguales." : `No son equivalentes: ${result.reason}.`);
+  },
+
   ambiguity(spec, answer) {
     const g = grammarOf(spec.grammar);
     const result = detectAmbiguity(g, spec.maxLen ?? 7);
@@ -137,7 +204,11 @@ const CHECKERS = {
     const b = ruleSet(expected);
     if (a.size === b.size && [...a].every((r) => b.has(r))) return ok("¡Correcto! Coincide con la solución de la guía.");
     const cmp = compareGrammars(mine, expected, spec.maxLen ?? 7);
-    if (cmp.equal) return ok("Genera el mismo lenguaje que la solución de la guía, pero las producciones no son las mismas (puede ser otra forma válida de resolverlo).", { exact: false });
+    if (cmp.equal) {
+      const violation = formViolation(spec.form, mine);
+      if (violation) return bad(`Genera el mismo lenguaje, pero ${violation}`);
+      return ok("Genera el mismo lenguaje que la solución de la guía, pero las producciones no son las mismas (puede ser otra forma válida de resolverlo).", { exact: false });
+    }
     const sample = cmp.onlyA[0] ?? cmp.onlyB[0];
     return bad(cmp.onlyA.length ? `Tu gramática genera ${fmtWord(cmp.onlyA[0])}, que no está en el lenguaje original.` : `Tu gramática no genera ${fmtWord(sample)}, que sí está en el lenguaje original.`);
   },
@@ -166,7 +237,7 @@ const CHECKERS = {
 };
 
 // Las respuestas de opción (choice) se comparan tal cual; las de texto se normalizan (lambda -> λ, >= -> ≥…).
-const CHOICE_KINDS = new Set(["choice", "grammar-type", "recursion", "ambiguity", "equivalent"]);
+const CHOICE_KINDS = new Set(["choice", "grammar-type", "recursion", "recursion-type", "ambiguity", "equivalent", "dfa-equivalent"]);
 
 export function checkAnswer(spec, answer) {
   const checker = CHECKERS[spec.kind];

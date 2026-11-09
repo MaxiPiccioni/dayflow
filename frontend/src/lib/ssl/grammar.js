@@ -407,12 +407,29 @@ export function analyzeRecursion(g) {
   return { recursive: findings.length > 0, findings };
 }
 
+// Clave del tipo de recursividad, para comparar con una opción elegida: none | izquierda | derecha | mixta | central | multi.
+export function recursionKey(analysis) {
+  if (analysis.error || !analysis.recursive) return "none";
+  if (analysis.findings.some((f) => f.kind !== "directa")) return "multi";
+  const sides = unique(analysis.findings.map((f) => f.side));
+  return sides.length === 1 ? sides[0] : "mixta";
+}
+
+export const RECURSION_OPTIONS = [
+  ["none", "No es recursiva"],
+  ["izquierda", "Recursiva por izquierda"],
+  ["derecha", "Recursiva por derecha"],
+  ["multi", "Recursiva en más de un paso"],
+  ["mixta", "Recursiva mixta"],
+  ["central", "Recursiva directa (el símbolo queda en el medio)"],
+];
+
 // Etiqueta corta con los nombres de la guía: "recursiva por izquierda", "recursiva en más de un paso", "no es recursiva".
 export function recursionLabel(analysis) {
   if (analysis.error) return analysis.error;
   if (!analysis.recursive) return "No es recursiva";
   const labels = unique(analysis.findings.map((f) => (f.kind === "directa" ? (f.side === "central" ? "recursiva directa (el símbolo queda en el centro)" : `recursiva por ${f.side}`) : "recursiva en más de un paso")));
-  return `Es ${labels.join(" y ")}`.replace("Es recursiva", "Es recursiva");
+  return `Es ${labels.join(" y ")}`;
 }
 
 // ---------- Comparación de gramáticas ----------
