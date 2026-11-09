@@ -33,12 +33,7 @@ describe("Unidad 5: analizadores y determinismo", () => {
     const b14 = get("u5-e14", "b");
     const { buildAsa } = await import("../machines/analyzers.js");
     const { parseGrammar } = await import("../grammar.js");
-    const g14 = parseGrammar({ productions: "S := AaB
-A := bB
-A := aa
-B := bC
-B := b
-C := b" }).grammar;
+    const g14 = parseGrammar({ productions: ["S := AaB", "A := bB", "A := aa", "B := bC", "B := b", "C := b"].join(String.fromCharCode(10)) }).grammar;
     expect(rows(runAp(buildAsa(g14, { style: "exercise" }), "aaabb")).map((r) => r.replace(/ /g, "")))
       .toEqual(b14.solution.split("\n").filter((l) => /^\d+\s/.test(l)).map((l) => l.split(/\s+/).slice(1).join("")));
   });
