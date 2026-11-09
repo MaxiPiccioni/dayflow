@@ -204,6 +204,9 @@ export function generateLanguage(g, maxLen = 8, { maxStates = MAX_STATES } = {})
   const slack = isContracting(g) || g.productions.some((p) => p.rhs === "") ? 4 : 0;
   const cap = maxLen + slack;
   const start = g.axiom;
+  const cf = isContextFree(g);
+  // En gramáticas de tipo 2 y 3 alcanza con derivar siempre el no terminal más a la izquierda (mismo lenguaje, muchos menos estados).
+  const terminalCount = (form) => chars(form).filter((s) => g.terminals.includes(s)).length;
   const parent = new Map([[start, null]]);
   let frontier = [start];
   const words = [];
@@ -212,8 +215,8 @@ export function generateLanguage(g, maxLen = 8, { maxStates = MAX_STATES } = {})
     const next = [];
     for (const form of frontier) {
       if (allTerminals(form, g)) { if (chars(form).length <= maxLen) words.push(form); continue; }
-      for (const step of successors(g, form)) {
-        if (chars(step.form).length > cap || parent.has(step.form)) continue;
+      for (const step of successors(g, form, { leftmost: cf })) {
+        if (chars(step.form).length > cap || parent.has(step.form) || (cf && terminalCount(step.form) > maxLen)) continue;
         if (parent.size >= maxStates) { truncated = true; continue; }
         parent.set(step.form, { from: form, prod: step.prod, pos: step.pos });
         next.push(step.form);
