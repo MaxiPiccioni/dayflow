@@ -1,4 +1,4 @@
-# Estado de Dayflow (actualizado 2026-11-06)
+# Estado de Dayflow (actualizado 2026-11-09)
 
 ## Hecho (todo en main)
 - Fase 1 seguridad: secretos fuera del repo, JWT con PyJWT, rate limit (300/min general, /auth 10/5min, login 5 fallos/15min), CORS Retry-After, HSTS y docs off en producción.
@@ -7,11 +7,13 @@
 - Hotfix 429 en el frontend.
 - Facultad completa: materias por año (1–5), estados, nota única, correlativas (aprobada/cursada, sin ciclos), electivas con créditos, anotaciones, dashboard, % de carrera, filtros, links de Drive por materia y carpeta.
 - Carpetas de Drive creadas para las 37 curriculares.
+- Facultad conectada con Pomodoro y Tareas: `subject_id` opcional en ambos, `GET /api/faculty/study` y tarjeta "Estudio" en cada materia. Buscador de materias en el Pomodoro y en el formulario de tareas.
+- Sandbox de SSL (Sintaxis y Semántica de los Lenguajes), solo frontend en `lib/ssl` y `components/ssl`: Unidad 2 (ejercicios 1 a 29) y Unidades 3 a 6 con editor de autómatas (AFD, AFND, AP, ALA y MT), ejecución manual/automática y comprobación por lenguaje. Progreso y autómatas en localStorage. 246 tests de vitest.
 
 ## Pendiente (orden sugerido)
-1. Facultad: conectar con Pomodoro y Tareas (`subject_id`), partes interactivas por materia, árbol de correlativas, integración con Claude (API key solo en Render, rate limit, vista previa antes de guardar), carpetas de electivas.
-2. 3-B fechas del cliente/UTC y mensajes 422 en español.
-3. 3-C dinero con Numeric. 3-D constraints únicos + CI con Postgres. 3-E categorías con FK. 3-F ahorros (los 2 xfail).
+1. Datos y correctitud (fase 3): 3-B fechas del cliente/UTC y mensajes 422 en español; 3-C dinero con Numeric; 3-D constraints únicos + CI con Postgres; 3-E categorías con FK; 3-F ahorros (los 2 xfail).
+2. Sandbox de SSL: confirmar con la cátedra la complejidad de Shannon (estados x símbolos de cinta); ejercicios 5 y 21 de la Unidad 6 sin comprobación automática. Unidad 1 (teórica) más adelante, con el programa del final.
+3. Facultad: partes interactivas de otras materias, árbol de correlativas, integración con Claude (API key solo en Render, rate limit, vista previa antes de guardar), carpetas de electivas.
 4. Fase 4: modularizar `main.py` y `page.js`; unificar paleta de colores (`lib/faculty.js` vs `page.js`).
 5. Fase 5: lotes de logs de hábitos, paginación, debounce del PATCH de tarifa, catch en el efecto de logs.
 6. Fase 6: documentación.
@@ -20,7 +22,8 @@
 - Borrar ramas remotas viejas en GitHub.
 - Verificar producción en Render tras el deploy (`/api/health` ok, `/docs` 404, login) y que las materias cargadas tengan level 1–5 (el máximo bajó de 8 a 5).
 - Borrar `diag-test@example.com` en Neon si sigue.
-- Opcional: branch protection exigiendo CI en main.
+- GitHub Actions está bloqueado por un problema de facturación de la cuenta ("account is locked due to a billing issue"): hoy ningún PR tiene CI. Se mergea confiando en los tests locales y en el build de Vercel. Arreglar en Settings, Billing and plans.
+- Opcional: branch protection exigiendo CI en main (después de arreglar la facturación).
 
 ## Decisiones
 - Aprobada = `aprobada` o `aprobacion_directa`; cursada incluye regular, promociones, aprobación directa y aprobada.
@@ -28,4 +31,5 @@
 - Archivos solo como links de Drive (nada se guarda en el servidor).
 - Materias se cargan a mano (sin botón de importar plan).
 - Flujo: el agente de VS Code programa y pushea; se abre PR con `gh api`, se espera CI y se mergea con merge commit.
+- El material de la cátedra (texto de la guía de SSL) vive en `docs/ssl/`, ignorado por git: no se sube al repo.
 - Ahorrar tokens: no re-correr suites que ya pasaron en CI, respuestas cortas.
