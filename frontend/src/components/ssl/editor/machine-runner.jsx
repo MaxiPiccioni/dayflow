@@ -10,7 +10,7 @@ const button = "flex items-center gap-1 rounded-xl border border-zinc-200 px-2.5
 const primary = "border-zinc-900 bg-zinc-900 text-white hover:border-zinc-900 dark:border-lime-400 dark:bg-lime-400 dark:text-zinc-950";
 const SPEEDS = [["1800", "Lento"], ["900", "Normal"], ["450", "Rápido"], ["180", "Muy rápido"]];
 
-function TapeView({ tape, head, blank }) {
+export function TapeView({ tape, head, blank }) {
   return (
     <div className="w-0 min-w-full overflow-x-auto pb-1">
       <ol className="flex w-max gap-0.5" aria-label="Cinta">
@@ -27,7 +27,7 @@ function TapeView({ tape, head, blank }) {
   );
 }
 
-function StackView({ stack }) {
+export function StackView({ stack }) {
   const cells = Array.from(stack);
   return (
     <div aria-label={`Pila: ${stack}`} className="inline-flex flex-col-reverse gap-0.5">
@@ -39,7 +39,7 @@ function StackView({ stack }) {
 }
 
 // Árbol de descripciones instantáneas hasta el paso k (en las máquinas deterministas es una sola rama).
-function ConfigTree({ run, k }) {
+export function ConfigTree({ run, k }) {
   const { nodes, levels } = run.raw;
   const fmt = (n) => (run.kind === "fa" ? `(${n.state}, ${n.rest === "" ? "λ" : n.rest})` : `(${n.state}, ${n.rest === "" ? "λ" : n.rest}, ${n.stack})`);
   const win = new Set(run.raw.acceptingPath ?? []);

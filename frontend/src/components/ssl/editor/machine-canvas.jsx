@@ -7,7 +7,7 @@ const stateLabelSize = (id) => (id.length > 7 ? 9 : id.length > 4 ? 11 : 14);
 // Lienzo SVG del editor. Modos: "select" (mover y elegir), "state" (agregar estado con un clic),
 // "link" (unir: clic en el origen y clic en el destino; el mismo estado hace un bucle) y "delete".
 // Cada estado es un botón enfocable: Enter lo elige, las flechas lo mueven y Supr lo borra.
-export function MachineCanvas({ machine, mode, selection, highlight, readOnly, onLiveChange, onCommitDrag, onChange, onSelect, onDelete, onRequestTransition, linkFrom, onLinkFrom }) {
+export function MachineCanvas({ machine, mode, selection, highlight, readOnly, onLiveChange, onCommitDrag, onChange, onSelect, onDelete, onRequestTransition, linkFrom, onLinkFrom, fill = false }) {
   const svgRef = useRef(null);
   const drag = useRef(null);
   const [hover, setHover] = useState(null);
@@ -92,7 +92,7 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
   const describe = (s) => `Estado ${s.id}${machine.initial === s.id ? ", inicial" : ""}${machine.accepting.includes(s.id) ? ", de aceptación" : ""}`;
 
   return (
-    <div className="w-0 min-w-full overflow-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/60" style={{ maxHeight: 440, touchAction: "pan-x pan-y" }}>
+    <div className="w-0 min-w-full overflow-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/60" style={fill ? { height: "100%", touchAction: "pan-x pan-y" } : { maxHeight: 440, touchAction: "pan-x pan-y" }}>
       <svg
         ref={svgRef}
         role="group"
