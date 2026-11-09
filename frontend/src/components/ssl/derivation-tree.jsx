@@ -36,7 +36,7 @@ export function DerivationTree({ tree, label = "Árbol de derivación" }) {
   walk(root);
 
   return (
-    <div className="max-w-full overflow-x-auto rounded-xl border border-zinc-200 p-2 dark:border-zinc-800">
+    <div className="w-0 min-w-full overflow-x-auto rounded-xl border border-zinc-200 p-2 dark:border-zinc-800">
       <svg role="img" aria-label={`${label}: raíz ${tree.sym}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="mx-auto block text-zinc-900 dark:text-zinc-100">
         {lines}
         {labels}

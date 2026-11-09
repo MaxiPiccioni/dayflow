@@ -29,7 +29,7 @@ export function SslSandbox({ onBack }) {
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Practicá los ejercicios de la guía: ejemplo resuelto, ejercicios de a uno, herramientas para calcular y comprobación de tus respuestas.</p>
         </div>
         {saveFailed && <p role="status" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">Este navegador no deja guardar el progreso: todo funciona, pero se pierde al recargar.</p>}
-        <div className="scrollbar-thin -mx-1 overflow-x-auto px-1 pb-1">
+        <div className="scrollbar-thin w-0 min-w-full overflow-x-auto pb-1">
           <div className="flex w-max gap-2" role="group" aria-label="Unidades">
             {UNITS.map((n) => (
               <button key={n} type="button" aria-pressed={unit === n} onClick={() => setUi("unit", n)} className={chip(unit === n)}>
@@ -43,7 +43,7 @@ export function SslSandbox({ onBack }) {
       {unit === 2 ? (
         <>
           <Card>
-            <div className="scrollbar-thin -mx-1 overflow-x-auto px-1 pb-1">
+            <div className="scrollbar-thin w-0 min-w-full overflow-x-auto pb-1">
               <div className="flex w-max gap-2" role="group" aria-label="Tipos de ejercicio de la Unidad 2">
                 {UNIT2_SECTIONS.map((s) => (
                   <button key={s.id} type="button" aria-pressed={s.id === sectionId} onClick={() => setUi("section", s.id)} className={chip(s.id === sectionId)}>

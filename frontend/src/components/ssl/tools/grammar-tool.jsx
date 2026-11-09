@@ -183,7 +183,7 @@ export function GrammarTool({ tool }) {
         <p role="alert" className="text-sm text-red-600">{parsed.error}</p>
       ) : (
         <>
-          <div className="scrollbar-thin -mx-1 overflow-x-auto px-1 pb-1">
+          <div className="scrollbar-thin w-0 min-w-full overflow-x-auto pb-1">
             <div className="flex w-max gap-2" role="group" aria-label="Qué querés ver de la gramática">
               {TABS.map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)} className={chip(tab === key)}>{label}</button>)}
             </div>

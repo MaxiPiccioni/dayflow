@@ -1,7 +1,7 @@
 // Tabla de transición de un AFD como en la guía: → marca el estado inicial y * los estados finales.
 export function TransitionTable({ table, caption }) {
   return (
-    <div className="max-w-full overflow-x-auto">
+    <div className="w-0 min-w-full overflow-x-auto">
       <table className="border-collapse text-center font-mono text-sm">
         <caption className="mb-1 text-left text-xs font-semibold text-zinc-500">{caption ?? table.name}</caption>
         <thead>

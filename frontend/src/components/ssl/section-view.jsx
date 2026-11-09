@@ -33,7 +33,7 @@ export function SectionView({ section, store }) {
       <ExampleCard key={section.id} example={section.example} />
 
       <Card className="space-y-4">
-        <div className="scrollbar-thin -mx-1 overflow-x-auto px-1 pb-1">
+        <div className="scrollbar-thin w-0 min-w-full overflow-x-auto pb-1">
           <div className="flex w-max gap-2" role="group" aria-label="Ejercicios de la sección">
             {exercises.map((item, i) => (
               <button key={item.id} type="button" onClick={() => go(i)} aria-pressed={i === index} aria-label={`Ejercicio ${item.number}${progress.done[item.id] ? ", hecho" : ""}`} className={chip(i === index, !!progress.done[item.id])}>
