@@ -5,6 +5,7 @@ import { RECURSION_OPTIONS, analyzeRecursion, classify, compareGrammars, detectA
 import { cleanGrammar, hasIndirectLeftRecursion, isFNC, isFNG } from "./transform.js";
 import { compareRegex, compileRegex } from "./regex.js";
 import { equivalent } from "./automata.js";
+import { acceptsFa } from "./machines/run-fa.js";
 
 // Comprobación de respuestas. Cada ejercicio declara un `check` (datos puros) y checkAnswer lo evalúa:
 // devuelve { ok, message, detail? }. Los textos están en español rioplatense.
@@ -176,6 +177,36 @@ const CHECKERS = {
     const expected = result.equal ? "si" : "no";
     if (!answer) return bad("Elegí una opción.");
     return answer === expected ? ok(result.equal ? `¡Correcto! Son equivalentes: ${result.reason}.` : `¡Correcto! No son equivalentes: ${result.reason}.`) : bad(result.equal ? "Sí son equivalentes: al minimizarlos quedan iguales." : `No son equivalentes: ${result.reason}.`);
+  },
+
+  // Clases de equivalencia entre AFD dados por tabla: se escriben los pares, por ejemplo "A=B, C=E".
+  "dfa-classes"(spec, answer) {
+    const letter = (t) => t.name.replace(/^f/, "");
+    const expected = new Set();
+    for (let i = 0; i < spec.tables.length; i++) for (let j = i + 1; j < spec.tables.length; j++) {
+      if (equivalent(spec.tables[i], spec.tables[j]).equal) expected.add([letter(spec.tables[i]), letter(spec.tables[j])].sort().join("="));
+    }
+    const text = answer.trim();
+    const none = /^(ninguno|ninguna|no hay|-|∅)$/i.test(text);
+    const given = new Set(none ? [] : text.split(/[,;\s]+/).filter(Boolean).map((p) => p.replace(/AFD/gi, "").split("=").map((x) => x.trim().toUpperCase()).sort().join("=")));
+    if (!text) return bad("Escribí los pares de autómatas equivalentes, por ejemplo A=B, C=E (o \"ninguno\").");
+    const wrong = [...given].filter((p) => !expected.has(p));
+    const missing = [...expected].filter((p) => !given.has(p));
+    if (!wrong.length && !missing.length) return ok(expected.size ? `¡Correcto! Son equivalentes: ${[...expected].join(", ")}.` : "¡Correcto! No hay autómatas equivalentes entre sí.");
+    return bad(wrong.length ? `No son equivalentes: ${wrong.join(", ")}.` : `Te falta${missing.length > 1 ? "n" : ""} ${missing.length} par${missing.length > 1 ? "es" : ""}.`);
+  },
+
+  // ¿Cuáles de estas cadenas reconoce el autómata finito? (árboles de descripciones instantáneas de la guía)
+  "fa-accepts"(spec, answer) {
+    const expected = spec.strings.filter((w) => acceptsFa(spec.machine, w));
+    const text = answer.trim();
+    if (!text) return bad("Escribí las cadenas que se reconocen, separadas por comas (o \"ninguna\").");
+    const given = /^(ninguna|ninguno|no hay|-|∅)$/i.test(text) ? [] : parseWordList(text);
+    const wrongIn = given.filter((w) => !expected.includes(w));
+    const missing = expected.filter((w) => !given.includes(w));
+    if (!wrongIn.length && !missing.length) return ok(expected.length ? `¡Correcto! Se reconocen ${showList(expected)}.` : "¡Correcto! Ninguna de las cadenas se reconoce.");
+    if (wrongIn.length) return bad(`${showList(wrongIn)} no ${wrongIn.length > 1 ? "se reconocen" : "se reconoce"}: ninguna rama de su árbol llega a un estado de aceptación con la cadena leída.`);
+    return bad(`Se reconoce también ${showList(missing)}: hay una rama de su árbol que llega a un estado de aceptación.`);
   },
 
   ambiguity(spec, answer) {
