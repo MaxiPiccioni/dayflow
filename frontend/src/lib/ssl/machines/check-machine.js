@@ -1,7 +1,7 @@
 import { allStrings } from "./run-fa.js";
 import { faEquivalent } from "./convert.js";
 import { acceptsMachine } from "./accepts.js";
-import { OUTPUTS, predicateOf } from "./predicates.js";
+import { GENERATORS, OUTPUTS, predicateOf } from "./predicates.js";
 import { analyze, inputSymbols, isDeterministicFa, isFa, isTape, TYPE_LABEL } from "./model.js";
 import { runTape } from "./run-tape.js";
 import { fmtWord } from "../notation.js";
@@ -61,10 +61,11 @@ function languageCheck(machine, spec) {
   let checked = 0;
   let truncatedAny = false;
   let timedOut = false;
-  for (const w of allStrings(alphabet, maxLen)) {
+  const source = spec.generator ? GENERATORS[spec.generator]() : allStrings(alphabet, maxLen);
+  for (const w of source) {
     if (Date.now() - started > BUDGET_MS) { timedOut = true; break; }
     const expected = predicate(w);
-    if (expected === null) continue;
+    if (expected === null || spec.optional?.includes(w)) continue;
     const { accepted, truncated } = acceptsMachine(machine, w);
     truncatedAny ||= truncated;
     checked++;

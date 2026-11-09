@@ -69,12 +69,61 @@ export const PREDICATES = {
     }
     return stack.length === 0;
   },
-  // a^i b^j con una relación entre i y j (> , < , =), i, j >= 1.
-  "ab-relation": (w, { relation }) => {
-    const m = /^(a+)(b+)$/.exec(w);
+  // a^i b^j con una relación entre i y j (> , < , =), i, j >= 1 (con bOptionalZero, j = 0 queda a criterio).
+  "ab-relation": (w, { relation, bOptionalZero = false }) => {
+    const m = /^(a+)(b*)$/.exec(w);
     if (!m) return false;
     const [i, j] = [m[1].length, m[2].length];
+    if (j === 0) return bOptionalZero ? null : false;
     return relation === ">" ? i > j : relation === "<" ? i < j : i === j;
+  },
+  // x^n y^n con n >= min (por ejemplo ( ) o 0^n 1^n).
+  "blocks-equal": (w, { x, y, min = 1 }) => {
+    const n = Array.from(w).length / 2;
+    return Number.isInteger(n) && n >= min && w === x.repeat(n) + y.repeat(n);
+  },
+  // 0^n 1 0^n con n >= 1 (el símbolo del medio puede ser otro).
+  "sym-mid-sym": (w, { side, mid, min = 1 }) => {
+    const n = (Array.from(w).length - 1) / 2;
+    return Number.isInteger(n) && n >= min && w === side.repeat(n) + mid + side.repeat(n);
+  },
+  // a^p b^n c^p con p >= 1 y n >= 1.
+  "a-b-c-outer": (w, { a, b, c }) => {
+    const m = new RegExp(`^(${a}+)(${b}+)(${c}+)$`).exec(w);
+    return !!m && m[1].length === m[3].length;
+  },
+  // x^n y^(k n) con n >= 1.
+  "ratio-blocks": (w, { x, y, ratio, min = 1 }) => {
+    const m = new RegExp(`^(${x}+)(${y}+)$`).exec(w);
+    return !!m && m[1].length >= min && m[2].length === ratio * m[1].length;
+  },
+  // Bytes (8 bits): primeros cuatro y últimos cuatro.
+  "byte-ones-equal": (w) => Array.from(w).length === 8 && count(w.slice(0, 4), "1") === count(w.slice(4), "1"),
+  "byte-zeros-ones": (w) => Array.from(w).length === 8 && count(w.slice(0, 4), "0") === count(w.slice(4), "1"),
+  "byte-mirror": (w) => Array.from(w).length === 8 && w.slice(4) === Array.from(w.slice(0, 4)).reverse().join(""),
+  "byte-mirror-neg": (w) => Array.from(w).length === 8 && w.slice(4) === Array.from(w.slice(0, 4)).reverse().map((b) => (b === "0" ? "1" : "0")).join(""),
+  // Dos nibbles separados por * (las cadenas que no tienen esa forma quedan a criterio de la guía).
+  "nibbles-star": (w, { rel }) => {
+    const m = /^([01]{4})\*([01]{4})$/.exec(w);
+    if (!m) return null;
+    const [a, b] = [m[1], m[2]];
+    if (rel === "ones-equal") return count(a, "1") === count(b, "1");
+    if (rel === "ones-zeros") return count(a, "1") === count(b, "0");
+    if (rel === "mirror") return a === Array.from(b).reverse().join("");
+    return a === Array.from(b).reverse().map((x) => (x === "0" ? "1" : "0")).join("");
+  },
+  // Paréntesis (), corchetes [] y llaves {} ordenados jerárquicamente: ( dentro de [ dentro de {.
+  "hier-balanced": (w, { emptyOptional = true }) => {
+    if (w === "") return emptyOptional ? null : false;
+    const rank = { "(": 1, "[": 2, "{": 3 };
+    const close = { ")": "(", "]": "[", "}": "{" };
+    const stack = [];
+    for (const ch of w) {
+      if (rank[ch]) { if (stack.length && rank[stack[stack.length - 1]] <= rank[ch]) return false; stack.push(ch); }
+      else if (close[ch]) { if (stack.pop() !== close[ch]) return false; }
+      else return false;
+    }
+    return stack.length === 0;
   },
 };
 
@@ -127,4 +176,17 @@ export const OUTPUTS = {
   },
   // ALA ejercicio 26: reemplaza el número por su recíproca (la cadena al revés).
   "reverse": (input) => Array.from(input).reverse().join(""),
+};
+
+// Conjuntos de cadenas de prueba para los lenguajes con estructura fija (evitan recorrer todas las cadenas de un alfabeto grande).
+export const GENERATORS = {
+  // Todas las cadenas x*y con x e y de cuatro bits, más algunas mal formadas.
+  nibbles: () => {
+    const bits = [];
+    for (let n = 0; n < 16; n++) bits.push(n.toString(2).padStart(4, "0"));
+    const out = [];
+    for (const a of bits) for (const b of bits) out.push(`${a}*${b}`);
+    out.push("", "*", "0101", "0101*", "*0101", "01*0101", "0101*010", "01010101", "0101**0101", "1*1", "0101*01010");
+    return out;
+  },
 };

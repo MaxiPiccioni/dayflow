@@ -59,15 +59,34 @@ describe("analizadores sintácticos (ejercicio 13 de la guía)", () => {
     expect(level(r, 4)).toEqual(["p,111,#1", "p,111,#B1"]);
   });
   it("ASA: tabla operativa 5.22 de 0111", () => {
-    const r = runAp(buildAsa(g13), "0111");
+    const r = runAp(buildAsa(g13, { style: "exercise" }), "0111");
     expect(r.accepted).toBe(true);
     expect(rows(r)).toEqual(["t 0111 #", "t 111 #0", "t 11 #01", "t 1 #011", "t - #0111", "t - #011B", "t - #01B", "t - #0B", "t - #S", "t - #", "p - #"]);
   });
   it("ASA: árbol 5.37, cada configuración de la figura está en el árbol", () => {
-    const r = runAp(buildAsa(g13), "0111", { maxNodes: 4000 });
+    const r = runAp(buildAsa(g13, { style: "exercise" }), "0111", { maxNodes: 4000 });
     const tree = allConfigs(r);
     const figure = ["t,0111,#", "t,111,#0", "t,11,#01", "t,1,#011", "t,11,#0B", "t,λ,#0111", "t,1,#01B", "t,11,#S", "t,1,#0B1", "t,λ,#011B", "t,1,#0B", "t,λ,#01B1", "t,1,#0BB", "t,λ,#01B", "t,1,#S", "t,λ,#0B1", "t,λ,#01BB", "t,λ,#0BB1", "t,λ,#0B", "t,λ,#S1", "t,λ,#0BB", "t,λ,#S", "t,λ,#", "p,λ,#"];
     for (const c of figure) expect(tree.has(c), c).toBe(true);
+  });
+});
+
+describe("ASA en la forma de la teoría (λ,#S/ #)", () => {
+  const g13 = grammar("S := 0B, B := 1B, B := 1");
+  it("acepta lo mismo que la gramática y no concatenaciones ni λ", () => {
+    const asa = buildAsa(g13);
+    expect(acceptsAp(asa, "0111").accepted).toBe(true);
+    expect(acceptsAp(asa, "01").accepted).toBe(true);
+    expect(acceptsAp(asa, "011011").accepted).toBe(false);
+    expect(acceptsAp(asa, "").accepted).toBe(false);
+    // La variante de los ejercicios de la guía sí las acepta (es su defecto).
+    const exercise = buildAsa(g13, { style: "exercise" });
+    expect(acceptsAp(exercise, "011011").accepted).toBe(true);
+    expect(acceptsAp(exercise, "").accepted).toBe(true);
+  });
+  it("tabla operativa de 0111 con un paso menos que la de la guía", () => {
+    const r = runAp(buildAsa(g13), "0111");
+    expect(rows(r)).toEqual(["t 0111 #", "t 111 #0", "t 11 #01", "t 1 #011", "t - #0111", "t - #011B", "t - #01B", "t - #0B", "t - #S", "p - #"]);
   });
 });
 
@@ -81,7 +100,7 @@ describe("analizadores sintácticos (ejercicio 14 de la guía)", () => {
     for (const c of ["p,bb,#Cb", "p,bb,#b", "p,b,#C", "p,b,#", "p,b,#b", "p,λ,#", "r,λ,#"]) expect(allConfigs(full).has(c), c).toBe(true);
   });
   it("ASA: tabla 5.24 de aaabb", () => {
-    const r = runAp(buildAsa(g14), "aaabb");
+    const r = runAp(buildAsa(g14, { style: "exercise" }), "aaabb");
     expect(rows(r)).toEqual(["t aaabb #", "t aabb #a", "t abb #aa", "t abb #A", "t bb #Aa", "t b #Aab", "t - #Aabb", "t - #AabC", "t - #AaB", "t - #S", "t - #", "p - #"]);
   });
 });
@@ -92,7 +111,7 @@ describe("ejercicios 8 y 10 de la Unidad 5", () => {
     const asd = runAp(buildAsd(g1, { names: { start: "p", work: "q", accept: "r" } }), "cabcbac");
     expect(asd.accepted).toBe(true);
     expect(rows(asd)).toEqual(["p cabcbac #", "q cabcbac #S", "q cabcbac #cMc", "q abcbac #cM", "q abcbac #caMa", "q bcbac #caM", "q bcbac #cabNb", "q cbac #cabN", "q cbac #cabc", "q bac #cab", "q ac #ca", "q c #c", "q - #", "r - #"]);
-    const asa = runAp(buildAsa(g1, { names: { start: "p", accept: "q" } }), "cabcbac");
+    const asa = runAp(buildAsa(g1, { names: { start: "p", accept: "q" }, style: "exercise" }), "cabcbac");
     expect(asa.accepted).toBe(true);
     expect(rows(asa).at(-1)).toBe("q - #");
     expect(acceptsAp(buildAsa(g1), "cabcbab").accepted).toBe(false);
@@ -101,7 +120,7 @@ describe("ejercicios 8 y 10 de la Unidad 5", () => {
     const g2 = grammar("S := bAaB, A := bBa | b, B := Ab | a");
     const asd = runAp(buildAsd(g2), "bbaaaa");
     expect(rows(asd)).toEqual(["t bbaaaa #", "p bbaaaa #S", "p bbaaaa #BaAb", "p baaaa #BaA", "p baaaa #BaaBb", "p aaaa #BaaB", "p aaaa #Baaa", "p aaa #Baa", "p aa #Ba", "p a #B", "p a #a", "p - #", "r - #"]);
-    const asa = runAp(buildAsa(g2), "bbaaaa");
+    const asa = runAp(buildAsa(g2, { style: "exercise" }), "bbaaaa");
     expect(asa.accepted).toBe(true);
     expect(rows(asa)).toEqual(["t bbaaaa #", "t baaaa #b", "t aaaa #bb", "t aaa #bba", "t aaa #bbB", "t aa #bbBa", "t aa #bA", "t a #bAa", "t - #bAaa", "t - #bAaB", "t - #S", "t - #", "p - #"]);
   });

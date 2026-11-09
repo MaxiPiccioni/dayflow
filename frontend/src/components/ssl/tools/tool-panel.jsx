@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { ChevronDown, Wrench } from "lucide-react";
+import { AnalyzerTool } from "@/components/ssl/tools/analyzer-tool";
 import { ConvertTool } from "@/components/ssl/tools/convert-tool";
 import { DfaTool } from "@/components/ssl/tools/dfa-tool";
 import { FormulaTool } from "@/components/ssl/tools/formula-tool";
@@ -18,6 +19,7 @@ const TOOLS = {
   transform: { title: "Transformaciones de gramáticas", Component: TransformTool },
   regex: { title: "Probador de expresiones regulares", Component: RegexTool },
   dfa: { title: "Minimización de AFD", Component: DfaTool },
+  analyzer: { title: "Analizador sintáctico de una gramática (ASD, ASA, Greibach)", Component: AnalyzerTool },
   convert: { title: "Conversión de AFND a AFD paso a paso", Component: ConvertTool },
   thompson: { title: "Thompson: expresión regular → AFND → AFD → mínimo", Component: ThompsonTool },
 };

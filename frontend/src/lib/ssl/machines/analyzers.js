@@ -11,8 +11,10 @@ import { createMachine, addState, addTransition, setInitial, toggleAccepting, au
 // ASA (ascendente, Bottom-Up): AP = (ΣT, ΣT ∪ ΣN ∪ {#}, {t, p}, t, #, {p}, f)
 //    a,λ/ a             en t, por cada terminal a (se lee y se apila)
 //    λ,α/ A             en t, por cada regla A := α (reducción: se desapila α y se apila A)
-//    λ,S/ λ             en t (se desapila el axioma)
-//    λ,#/ #             de t a p   (pila vacía: se acepta)
+//    λ,#S/ #            de t a p   (con el axioma sobre el fondo se acepta; es la forma de la teoría, pág. 127)
+//   Variante de los ejercicios 13 y 14 (style "exercise"): λ,S/ λ en t y λ,#/ # de t a p. Reproduce las tablas
+//   operativas de la guía, pero como S se puede desapilar en cualquier momento, también acepta concatenaciones de
+//   cadenas del lenguaje (por ejemplo 011011 para S := 0B, B := 1B | 1) y la cadena vacía.
 // ASD para gramáticas en Forma Normal de Greibach (A := aη): un solo estado operativo que lee el terminal
 //    a,A/ η             en p, por cada regla A := aη (η se apila de forma refleja)
 
@@ -41,14 +43,18 @@ export function buildAsd(g, { names = { start: "t", work: "p", accept: "r" }, na
   return autoLayout({ ...m, states: m.states.map((s, i) => ({ ...s, x: 90 + i * 170, y: 110 })) });
 }
 
-export function buildAsa(g, { names = { start: "t", accept: "p" }, name = "ASA" } = {}) {
+export function buildAsa(g, { names = { start: "t", accept: "p" }, name = "ASA", style = "theory" } = {}) {
   const { start, accept } = names;
   let m = base(g, name, [start, accept]);
   m = { ...m, pushMode: "natural" };
   for (const a of g.terminals) m = must(addTransition(m, { from: start, to: start, read: a, pop: "", push: a }));
   for (const r of rulesOf(g)) m = must(addTransition(m, { from: start, to: start, read: "", pop: r.rhs, push: r.lhs }));
-  m = must(addTransition(m, { from: start, to: start, read: "", pop: g.axiom, push: "" }));
-  m = must(addTransition(m, { from: start, to: accept, read: "", pop: "#", push: "#" }));
+  if (style === "exercise") {
+    m = must(addTransition(m, { from: start, to: start, read: "", pop: g.axiom, push: "" }));
+    m = must(addTransition(m, { from: start, to: accept, read: "", pop: "#", push: "#" }));
+  } else {
+    m = must(addTransition(m, { from: start, to: accept, read: "", pop: `#${g.axiom}`, push: "#" }));
+  }
   m = must(setInitial(m, start));
   m = must(toggleAccepting(m, accept));
   return { ...m, states: m.states.map((s, i) => ({ ...s, x: 120 + i * 220, y: 110 })) };
