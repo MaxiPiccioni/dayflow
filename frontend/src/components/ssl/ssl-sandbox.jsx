@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import Link from "next/link";
 import { ArrowLeft, Hourglass } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { SectionView } from "@/components/ssl/section-view";
@@ -7,11 +9,16 @@ import { countDone } from "@/lib/ssl/progress";
 
 const chip = (active) => `shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${active ? "bg-zinc-900 text-white dark:bg-lime-400 dark:text-zinc-950" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`;
 
-// Sandbox de Sintaxis y Semántica de los Lenguajes: pestañas por unidad; hoy solo la Unidad 2 tiene práctico.
-export function SslSandbox({ onBack }) {
+// Sandbox de Sintaxis y Semántica de los Lenguajes: una ruta por unidad (/facultad/[id]/sandbox/[unidad]).
+// Sin unidad en la ruta se muestra la última que se usó. La sección dentro de la unidad sigue siendo una pestaña interna.
+export function SslSandbox({ subjectId, unitNumber }) {
   const store = useSslProgress();
   const { progress, saveFailed, setUi } = store;
-  const unit = unitByNumber(progress.ui.unit) ?? UNITS[0];
+  const unit = unitByNumber(unitNumber ?? progress.ui.unit) ?? UNITS[0];
+  // La unidad abierta por la ruta queda como "la última que se usó".
+  useEffect(() => {
+    if (unitNumber !== undefined && progress.ui.unit !== unitNumber) setUi("unit", unitNumber);
+  }, [unitNumber, progress.ui.unit, setUi]);
   const active = isActive(unit);
   // La Unidad 2 conserva su clave de siempre ("section"); las demás usan "section.N".
   const sectionKey = unit.n === 2 ? "section" : `section.${unit.n}`;
@@ -20,7 +27,7 @@ export function SslSandbox({ onBack }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button type="button" onClick={onBack} className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-700"><ArrowLeft size={15} aria-hidden="true" /> Volver a la materia</button>
+        <Link href={`/facultad/${subjectId}`} className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-700"><ArrowLeft size={15} aria-hidden="true" /> Volver a la materia</Link>
       </div>
 
       <Card className="space-y-4">
@@ -33,9 +40,9 @@ export function SslSandbox({ onBack }) {
         <div className="scrollbar-thin w-0 min-w-full overflow-x-auto pb-1">
           <div className="flex w-max gap-2" role="group" aria-label="Unidades">
             {UNITS.map((u) => (
-              <button key={u.n} type="button" aria-pressed={unit.n === u.n} onClick={() => setUi("unit", u.n)} className={chip(unit.n === u.n)}>
+              <Link key={u.n} href={`/facultad/${subjectId}/sandbox/${u.n}`} scroll={false} aria-current={unit.n === u.n ? "page" : undefined} className={chip(unit.n === u.n)}>
                 Unidad {u.n}{isActive(u) ? "" : " · Próximamente"}
-              </button>
+              </Link>
             ))}
           </div>
         </div>

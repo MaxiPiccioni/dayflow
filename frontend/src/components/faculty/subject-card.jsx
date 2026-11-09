@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import Link from "next/link";
 import { Lock } from "lucide-react";
 import { colorFor, formatGrade, iconFor, showsAvailability, statusInfo } from "@/lib/faculty";
 
@@ -16,8 +17,8 @@ export function SubjectIcon({ subject, size = 28, className = "" }) {
   );
 }
 
-// Tarjeta cuadrada de una materia. Sin onClick se muestra como vista previa (formulario).
-export function SubjectCard({ subject, onClick }) {
+// Tarjeta cuadrada de una materia. Sin href se muestra como vista previa (formulario); con href es un enlace al detalle.
+export function SubjectCard({ subject, href }) {
   const hasGrade = subject.grade !== null && subject.grade !== undefined && subject.grade !== "";
   // La vista previa no trae disponibilidad (la calcula el servidor): ahí no se muestra.
   const availability = showsAvailability(subject.status) && typeof subject.available === "boolean" ? subject.available : null;
@@ -44,10 +45,10 @@ export function SubjectCard({ subject, onClick }) {
     </>
   );
   const className = "relative flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white p-3 pt-6 text-center transition-colors dark:border-zinc-800 dark:bg-zinc-900";
-  if (!onClick) return <div className={className}>{content}</div>;
+  if (!href) return <div className={className}>{content}</div>;
   return (
-    <button type="button" onClick={onClick} className={`${className} hover:border-lime-400 focus-visible:border-lime-500 focus-visible:outline-none dark:hover:border-lime-400/60`}>
+    <Link href={href} className={`${className} hover:border-lime-400 focus-visible:border-lime-500 focus-visible:outline-none dark:hover:border-lime-400/60`}>
       {content}
-    </button>
+    </Link>
   );
 }
