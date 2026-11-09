@@ -1,11 +1,13 @@
 import { useId, useState } from "react";
 import { ChevronDown, Wrench } from "lucide-react";
+import { ConvertTool } from "@/components/ssl/tools/convert-tool";
 import { DfaTool } from "@/components/ssl/tools/dfa-tool";
 import { FormulaTool } from "@/components/ssl/tools/formula-tool";
 import { GrammarTool } from "@/components/ssl/tools/grammar-tool";
 import { LangOpsTool } from "@/components/ssl/tools/langops-tool";
 import { RegexTool } from "@/components/ssl/tools/regex-tool";
 import { StringsTool } from "@/components/ssl/tools/strings-tool";
+import { ThompsonTool } from "@/components/ssl/tools/thompson-tool";
 import { TransformTool } from "@/components/ssl/tools/transform-tool";
 
 const TOOLS = {
@@ -16,6 +18,8 @@ const TOOLS = {
   transform: { title: "Transformaciones de gramáticas", Component: TransformTool },
   regex: { title: "Probador de expresiones regulares", Component: RegexTool },
   dfa: { title: "Minimización de AFD", Component: DfaTool },
+  convert: { title: "Conversión de AFND a AFD paso a paso", Component: ConvertTool },
+  thompson: { title: "Thompson: expresión regular → AFND → AFD → mínimo", Component: ThompsonTool },
 };
 
 // Panel desplegable que contiene la herramienta interactiva de un ejercicio.

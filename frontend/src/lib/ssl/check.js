@@ -5,6 +5,7 @@ import { RECURSION_OPTIONS, analyzeRecursion, classify, compareGrammars, detectA
 import { cleanGrammar, hasIndirectLeftRecursion, isFNC, isFNG } from "./transform.js";
 import { compareRegex, compileRegex } from "./regex.js";
 import { equivalent } from "./automata.js";
+import { acceptsFa } from "./machines/run-fa.js";
 
 // Comprobación de respuestas. Cada ejercicio declara un `check` (datos puros) y checkAnswer lo evalúa:
 // devuelve { ok, message, detail? }. Los textos están en español rioplatense.
@@ -193,6 +194,19 @@ const CHECKERS = {
     const missing = [...expected].filter((p) => !given.has(p));
     if (!wrong.length && !missing.length) return ok(expected.size ? `¡Correcto! Son equivalentes: ${[...expected].join(", ")}.` : "¡Correcto! No hay autómatas equivalentes entre sí.");
     return bad(wrong.length ? `No son equivalentes: ${wrong.join(", ")}.` : `Te falta${missing.length > 1 ? "n" : ""} ${missing.length} par${missing.length > 1 ? "es" : ""}.`);
+  },
+
+  // ¿Cuáles de estas cadenas reconoce el autómata finito? (árboles de descripciones instantáneas de la guía)
+  "fa-accepts"(spec, answer) {
+    const expected = spec.strings.filter((w) => acceptsFa(spec.machine, w));
+    const text = answer.trim();
+    if (!text) return bad("Escribí las cadenas que se reconocen, separadas por comas (o \"ninguna\").");
+    const given = /^(ninguna|ninguno|no hay|-|∅)$/i.test(text) ? [] : parseWordList(text);
+    const wrongIn = given.filter((w) => !expected.includes(w));
+    const missing = expected.filter((w) => !given.includes(w));
+    if (!wrongIn.length && !missing.length) return ok(expected.length ? `¡Correcto! Se reconocen ${showList(expected)}.` : "¡Correcto! Ninguna de las cadenas se reconoce.");
+    if (wrongIn.length) return bad(`${showList(wrongIn)} no ${wrongIn.length > 1 ? "se reconocen" : "se reconoce"}: ninguna rama de su árbol llega a un estado de aceptación con la cadena leída.`);
+    return bad(`Se reconoce también ${showList(missing)}: hay una rama de su árbol que llega a un estado de aceptación.`);
   },
 
   ambiguity(spec, answer) {

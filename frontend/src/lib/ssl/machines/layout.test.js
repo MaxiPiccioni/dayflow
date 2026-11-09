@@ -39,3 +39,21 @@ describe("geometría del lienzo", () => {
     expect(clampPoint(-5, 3)).toEqual({ x: R + 6, y: R + 6 });
   });
 });
+
+describe("distribución por capas", () => {
+  it("separa los estados por distancia al inicial y por fila", async () => {
+    const { layeredLayout } = await import("./layout.js");
+    const m = {
+      states: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 0, y: 0 }, { id: "c", x: 0, y: 0 }, { id: "d", x: 0, y: 0 }],
+      initial: "a",
+      transitions: [{ from: "a", to: "b" }, { from: "a", to: "c" }, { from: "b", to: "d" }],
+    };
+    const l = layeredLayout(m);
+    const pos = Object.fromEntries(l.states.map((s) => [s.id, [s.x, s.y]]));
+    expect(pos.a[0]).toBeLessThan(pos.b[0]);
+    expect(pos.b[0]).toBe(pos.c[0]);
+    expect(pos.b[1]).not.toBe(pos.c[1]);
+    expect(pos.d[0]).toBeGreaterThan(pos.b[0]);
+    expect(new Set(l.states.map((s) => `${s.x},${s.y}`)).size).toBe(4);
+  });
+});

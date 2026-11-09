@@ -1,4 +1,5 @@
-import { addState, addTransition, autoLayout, createMachine, inputSymbols, isFa, setInitial, toggleAccepting } from "./model.js";
+import { addState, addTransition, createMachine, inputSymbols, isFa, setInitial, toggleAccepting } from "./model.js";
+import { layeredLayout } from "./layout.js";
 import { lambdaClosure } from "./run-fa.js";
 
 // Conversión de AFND a AFD por el Teorema 2 de la guía:
@@ -100,7 +101,7 @@ export function determinize(nfa, { includeEmpty = true, prefix = "C" } = {}) {
   const accepting = [];
   sets.forEach((set, i) => { if (set.some((q) => nfa.accepting.includes(q))) accepting.push(`${prefix}${i}`); });
   for (const a of accepting) dfa = must(toggleAccepting(dfa, a));
-  dfa = autoLayout(dfa, 4, 130);
+  dfa = layeredLayout(dfa);
   steps.push({ title: "Estados de aceptación", lines: [`Son los que contienen algún estado de aceptación del AFND (${setText(nfa.accepting)}): ${setText(accepting)}.`] });
 
   const mapping = sets.map((set, i) => ({ name: `${prefix}${i}`, set }));

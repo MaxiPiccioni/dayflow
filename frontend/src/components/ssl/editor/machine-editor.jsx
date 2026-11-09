@@ -140,7 +140,7 @@ function StatePanel({ machine, editor, id, readOnly }) {
   );
 }
 
-function TableView({ machine }) {
+export function TableView({ machine }) {
   if (isFa(machine)) {
     const t = transitionTable(machine);
     return (

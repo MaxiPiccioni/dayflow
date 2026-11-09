@@ -79,3 +79,30 @@ export function nextFreePosition(states, gap = 120) {
 
 // Mantiene a un punto dentro del lienzo (no negativo).
 export const clampPoint = (x, y) => ({ x: Math.max(R + 6, x), y: Math.max(R + 6, y) });
+
+// Distribución por capas (de izquierda a derecha según la distancia desde el estado inicial) para los autómatas
+// que genera el sandbox (Thompson, conversiones, analizadores): evita que queden todos amontonados.
+export function layeredLayout(machine, { gapX = 130, gapY = 100, left = 80, top = 80 } = {}) {
+  const ids = machine.states.map((s) => s.id);
+  const next = new Map(ids.map((id) => [id, []]));
+  for (const t of machine.transitions) if (t.from !== t.to) next.get(t.from)?.push(t.to);
+  const depth = new Map();
+  const queue = machine.initial ? [machine.initial] : [];
+  if (machine.initial) depth.set(machine.initial, 0);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const to of next.get(id) ?? []) if (!depth.has(to)) { depth.set(to, depth.get(id) + 1); queue.push(to); }
+  }
+  let extra = Math.max(-1, ...depth.values()) + 1;
+  for (const id of ids) if (!depth.has(id)) depth.set(id, extra++);
+  const rows = new Map();
+  return {
+    ...machine,
+    states: machine.states.map((s) => {
+      const d = depth.get(s.id);
+      const row = rows.get(d) ?? 0;
+      rows.set(d, row + 1);
+      return { ...s, x: left + d * gapX, y: top + row * gapY };
+    }),
+  };
+}

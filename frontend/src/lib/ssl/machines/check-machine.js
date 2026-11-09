@@ -39,6 +39,7 @@ function structureProblems(machine, spec) {
     for (const s of machine.states) for (const a of symbols) if (!machine.transitions.some((t) => t.from === s.id && t.symbol === a)) missing.push(`f(${s.id}, ${a})`);
     if (missing.length) problems.push(`Está incompleto: faltan ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? "…" : ""}. Completalo con un estado de error E.`);
   }
+  if (spec.exactStates && machine.states.length !== spec.exactStates) problems.push(`Pasa el lenguaje, pero el autómata pedido tiene ${spec.exactStates} estados y el tuyo tiene ${machine.states.length}${machine.states.length > spec.exactStates ? " (todavía se puede minimizar)" : ""}.`);
   if (spec.errorState && !machine.states.some((s) => /^(q?[eE]|error)$/.test(s.id))) problems.push("Falta el estado de error E que pide el ejercicio.");
   return problems;
 }
