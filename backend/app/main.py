@@ -2,18 +2,22 @@ import calendar
 from collections import defaultdict
 from datetime import date as date_type
 from datetime import timedelta
+from decimal import Decimal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .clock import today
 from .config import settings
 from .database import get_db
+from .db_helpers import insert_or_get
 from .deps import current_user
 from .models import Category, Event, Habit, HabitLog, HourEntry, HourPayment, PayPeriod, PomodoroLog, PomodoroSettings, SavingEntry, SavingMovement, ShoppingItem, Subject, Task, Transaction, User
+from .money import ZERO, quantize, to_decimal
 from .rate_limit import auth_rate_limit, clear_login_failures, ensure_login_allowed, rate_limit, register_login_failure
 from .routers import faculty
 from .schemas import (
@@ -174,12 +178,12 @@ def _habit_logs_by_habit_id(db: Session, habit_ids: list[int]) -> dict[int, dict
     return by_habit
 
 
-def _saving_out_from_amount(saving: SavingEntry, current: float) -> SavingEntryOut:
+def _saving_out_from_amount(saving: SavingEntry, current: Decimal) -> SavingEntryOut:
     return SavingEntryOut(id=saving.id, name=saving.name, start_amount=saving.start_amount, current_amount=current, gain=current - saving.start_amount)
 
 
-def _saving_current_amount(db: Session, saving: SavingEntry) -> float:
-    moved = db.scalar(select(func.coalesce(func.sum(SavingMovement.amount), 0.0)).where(SavingMovement.saving_id == saving.id)) or 0.0
+def _saving_current_amount(db: Session, saving: SavingEntry) -> Decimal:
+    moved = db.scalar(select(func.coalesce(func.sum(SavingMovement.amount), ZERO)).where(SavingMovement.saving_id == saving.id)) or ZERO
     return saving.start_amount + moved
 
 
@@ -187,11 +191,11 @@ def _build_saving_out(db: Session, saving: SavingEntry) -> SavingEntryOut:
     return _saving_out_from_amount(saving, _saving_current_amount(db, saving))
 
 
-def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int, float]:
+def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int, Decimal]:
     if not saving_ids:
         return {}
     rows = db.execute(
-        select(SavingMovement.saving_id, func.coalesce(func.sum(SavingMovement.amount), 0.0))
+        select(SavingMovement.saving_id, func.coalesce(func.sum(SavingMovement.amount), ZERO))
         .where(SavingMovement.saving_id.in_(saving_ids))
         .group_by(SavingMovement.saving_id)
     ).all()
@@ -200,17 +204,21 @@ def _moved_amounts_by_saving_id(db: Session, saving_ids: list[int]) -> dict[int,
 
 def _rollover_savings(db: Session, user: User, current_month: str) -> None:
     all_savings = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id).order_by(SavingEntry.month.desc())).all()
-    latest_by_name: dict[str, SavingEntry] = {}
+    latest_by_series: dict[str, SavingEntry] = {}
     for saving in all_savings:
-        latest_by_name.setdefault(saving.name, saving)
-    to_roll = [saving for saving in latest_by_name.values() if saving.month < current_month]
+        latest_by_series.setdefault(saving.series_id, saving)
+    to_roll = [saving for saving in latest_by_series.values() if saving.month < current_month]
     if not to_roll:
         return
     moved_by_id = _moved_amounts_by_saving_id(db, [saving.id for saving in to_roll])
     for saving in to_roll:
-        current_amount = saving.start_amount + moved_by_id.get(saving.id, 0.0)
-        db.add(SavingEntry(user_id=user.id, name=saving.name, start_amount=current_amount, month=current_month))
-    db.commit()
+        current_amount = saving.start_amount + moved_by_id.get(saving.id, ZERO)
+        db.add(SavingEntry(user_id=user.id, series_id=saving.series_id, name=saving.name, start_amount=current_amount, month=current_month))
+    try:
+        db.commit()
+    except IntegrityError:
+        # Otro pedido hizo el mismo traspaso al mismo tiempo: el índice único evita el duplicado y no hay nada más que hacer.
+        db.rollback()
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)
@@ -225,7 +233,7 @@ def dashboard(client_today: date_type | None = None, user: User = Depends(curren
     _rollover_savings(db, user, current_month)
     saving_rows = db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.month == current_month).order_by(SavingEntry.id)).all()
     moved_by_saving = _moved_amounts_by_saving_id(db, [saving.id for saving in saving_rows])
-    savings = [_saving_out_from_amount(saving, saving.start_amount + moved_by_saving.get(saving.id, 0.0)) for saving in saving_rows]
+    savings = [_saving_out_from_amount(saving, saving.start_amount + moved_by_saving.get(saving.id, ZERO)) for saving in saving_rows]
     return DashboardOut(tasks=tasks, habits=habits, transactions=transactions, savings=savings)
 
 
@@ -251,9 +259,10 @@ def _ensure_subject_owned(db: Session, user: User, subject_id: int | None) -> No
 @app.post("/api/tasks", response_model=list[TaskOut], status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Task]:
     _ensure_subject_owned(db, user, payload.subject_id)
-    data = payload.model_dump(exclude={"repeat_days"})
+    data = payload.model_dump(exclude={"repeat_days", "category"})
+    category_id = _category_id(db, user, "agenda", None, payload.category)
     occurrences = _repeat_occurrence_dates(payload.due_date, payload.repeat_days)
-    tasks = [Task(user_id=user.id, **{**data, "due_date": occurrence}) for occurrence in occurrences]
+    tasks = [Task(user_id=user.id, category_id=category_id, **{**data, "due_date": occurrence}) for occurrence in occurrences]
     db.add_all(tasks)
     db.commit()
     for task in tasks:
@@ -279,7 +288,10 @@ def update_task(task_id: int, payload: TaskUpdate, user: User = Depends(current_
         raise HTTPException(status_code=404, detail="Task not found")
     _ensure_subject_owned(db, user, payload.subject_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(task, field, value)
+        if field == "category":
+            task.category_id = _category_id(db, user, "agenda", None, value)
+        else:
+            setattr(task, field, value)
     db.commit()
     db.refresh(task)
     return task
@@ -315,6 +327,26 @@ def _category_name_taken(db: Session, user_id: int, scope: str, kind: str | None
     return any(category.name.strip().casefold() == wanted for category in db.scalars(_category_query(user_id, scope, kind)) if category.id != exclude_id)
 
 
+def _category_id(db: Session, user: User, scope: str, kind: str | None, name: str | None) -> int | None:
+    """Id de la categoría con ese nombre (sin distinguir mayúsculas) o None si no hay nombre.
+
+    Si el nombre no existe todavía se crea: antes la categoría era texto libre y el frontend podía mandar cualquiera.
+    """
+    clean = (name or "").strip()
+    if not clean:
+        return None
+    wanted = clean.casefold()
+    for category in db.scalars(_category_query(user.id, scope, kind)):
+        if category.name.strip().casefold() == wanted:
+            return category.id
+
+    def find() -> Category | None:
+        return next((category for category in db.scalars(_category_query(user.id, scope, kind)) if category.name.strip().casefold() == wanted), None)
+
+    category, _ = insert_or_get(db, Category(user_id=user.id, name=clean, scope=scope, kind=kind), find)
+    return category.id
+
+
 @app.get("/api/categories", response_model=list[CategoryOut])
 def list_categories(scope: str = "agenda", kind: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Category]:
     categories = db.scalars(_category_query(user.id, scope, kind).order_by(Category.name)).all()
@@ -334,7 +366,11 @@ def create_category(payload: CategoryCreate, user: User = Depends(current_user),
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
     category = Category(user_id=user.id, name=name, scope=payload.scope, kind=payload.kind)
     db.add(category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe") from exc
     db.refresh(category)
     return category
 
@@ -347,23 +383,8 @@ def rename_category(category_id: int, payload: CategoryUpdate, user: User = Depe
     name = payload.name.strip()
     if _category_name_taken(db, user.id, category.scope, category.kind, name, exclude_id=category.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esa categoría ya existe")
-    old_name = category.name
+    # Las tareas, eventos, movimientos y compras apuntan a la categoría por id: no hay nada más que actualizar.
     category.name = name
-    if category.scope == "finance":
-        affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == old_name, Transaction.kind == category.kind)).all()
-        for transaction in affected_transactions:
-            transaction.category = name
-    elif category.scope == "shopping":
-        affected_items = db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id, ShoppingItem.category == old_name)).all()
-        for item in affected_items:
-            item.category = name
-    else:
-        affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == old_name)).all()
-        for task in affected_tasks:
-            task.category = name
-        affected_events = db.scalars(select(Event).where(Event.user_id == user.id, Event.type == old_name)).all()
-        for event in affected_events:
-            event.type = name
     db.commit()
     db.refresh(category)
     return category
@@ -374,21 +395,9 @@ def delete_category(category_id: int, user: User = Depends(current_user), db: Se
     category = db.scalar(select(Category).where(Category.id == category_id, Category.user_id == user.id))
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    if category.scope == "finance":
-        affected_transactions = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category == category.name, Transaction.kind == category.kind)).all()
-        for transaction in affected_transactions:
-            transaction.category = None
-    elif category.scope == "shopping":
-        affected_items = db.scalars(select(ShoppingItem).where(ShoppingItem.user_id == user.id, ShoppingItem.category == category.name)).all()
-        for item in affected_items:
-            item.category = None
-    else:
-        affected_tasks = db.scalars(select(Task).where(Task.user_id == user.id, Task.category == category.name)).all()
-        for task in affected_tasks:
-            task.category = None
-        affected_events = db.scalars(select(Event).where(Event.user_id == user.id, Event.type == category.name)).all()
-        for event in affected_events:
-            event.type = None
+    # SQLite no aplica el ON DELETE SET NULL: se hace explícito para que valga igual en las dos bases.
+    for model in (Task, Event, Transaction, ShoppingItem):
+        db.execute(update(model).where(model.user_id == user.id, model.category_id == category.id).values(category_id=None))
     db.delete(category)
     db.commit()
 
@@ -434,12 +443,16 @@ def set_habit_log(habit_id: int, log_date: date_type, payload: HabitLogUpdate, c
     if log_date < habit.created_at.date():
         raise HTTPException(status_code=400, detail="No se pueden registrar días previos a la creación del hábito")
     count = min(max(payload.count, 0), habit.target)
-    log = db.scalar(select(HabitLog).where(HabitLog.habit_id == habit_id, HabitLog.log_date == log_date))
-    if not log:
-        log = HabitLog(user_id=user.id, habit_id=habit_id, log_date=log_date, count=count)
-        db.add(log)
-    else:
-        log.count = count
+
+    def find_log() -> HabitLog | None:
+        return db.scalar(select(HabitLog).where(HabitLog.habit_id == habit_id, HabitLog.log_date == log_date))
+
+    log = find_log()
+    if log is None:
+        log, created = insert_or_get(db, HabitLog(user_id=user.id, habit_id=habit_id, log_date=log_date, count=count), find_log)
+        if created:
+            return _build_habit_out(db, habit, today)
+    log.count = count
     db.commit()
     return _build_habit_out(db, habit, today)
 
@@ -478,7 +491,8 @@ def list_shopping_items(user: User = Depends(current_user), db: Session = Depend
 
 @app.post("/api/shopping-items", response_model=ShoppingItemOut, status_code=status.HTTP_201_CREATED)
 def create_shopping_item(payload: ShoppingItemCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> ShoppingItem:
-    item = ShoppingItem(user_id=user.id, **{**payload.model_dump(), "name": payload.name.strip()})
+    category_id = _category_id(db, user, "shopping", None, payload.category)
+    item = ShoppingItem(user_id=user.id, category_id=category_id, **{**payload.model_dump(exclude={"category"}), "name": payload.name.strip()})
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -491,7 +505,10 @@ def update_shopping_item(item_id: int, payload: ShoppingItemUpdate, user: User =
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(item, field, value)
+        if field == "category":
+            item.category_id = _category_id(db, user, "shopping", None, value)
+        else:
+            setattr(item, field, value)
     db.commit()
     db.refresh(item)
     return item
@@ -508,7 +525,8 @@ def delete_shopping_item(item_id: int, user: User = Depends(current_user), db: S
 
 @app.post("/api/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(payload: TransactionCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Transaction:
-    transaction = Transaction(user_id=user.id, **payload.model_dump())
+    category_id = _category_id(db, user, "finance", payload.kind, payload.category)
+    transaction = Transaction(user_id=user.id, category_id=category_id, **payload.model_dump(exclude={"category"}))
     db.add(transaction)
     db.commit()
     db.refresh(transaction)
@@ -524,11 +542,22 @@ def delete_transaction(transaction_id: int, user: User = Depends(current_user), 
     db.commit()
 
 
+SAVING_NAME_TAKEN = "Ya tenés un ahorro con ese nombre este mes"
+
+
 @app.post("/api/savings", response_model=SavingEntryOut, status_code=status.HTTP_201_CREATED)
 def create_saving(payload: SavingEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
-    saving = SavingEntry(user_id=user.id, name=payload.name.strip(), start_amount=payload.start_amount, month=today().strftime("%Y-%m"))
+    month = today().strftime("%Y-%m")
+    name = payload.name.strip()
+    if db.scalar(select(SavingEntry.id).where(SavingEntry.user_id == user.id, SavingEntry.name == name, SavingEntry.month == month)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN)
+    saving = SavingEntry(user_id=user.id, name=name, start_amount=payload.start_amount, month=month)
     db.add(saving)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN) from exc
     db.refresh(saving)
     return _build_saving_out(db, saving)
 
@@ -538,9 +567,24 @@ def update_saving(saving_id: int, payload: SavingEntryUpdate, user: User = Depen
     saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
     if not saving:
         raise HTTPException(status_code=404, detail="Saving not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "name" in changes:
+        new_name = changes.pop("name").strip()
+        if new_name != saving.name:
+            months = select(SavingEntry.month).where(SavingEntry.user_id == user.id, SavingEntry.series_id == saving.series_id)
+            clash = select(SavingEntry.id).where(SavingEntry.user_id == user.id, SavingEntry.name == new_name, SavingEntry.series_id != saving.series_id, SavingEntry.month.in_(months))
+            if db.scalar(clash.limit(1)):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN)
+            # El nombre es de todo el ahorro (todos sus meses): así el traspaso al mes siguiente no lo duplica.
+            db.execute(update(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.series_id == saving.series_id).values(name=new_name))
+            saving.name = new_name
+    for field, value in changes.items():
         setattr(saving, field, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SAVING_NAME_TAKEN) from exc
     db.refresh(saving)
     return _build_saving_out(db, saving)
 
@@ -550,7 +594,10 @@ def delete_saving(saving_id: int, user: User = Depends(current_user), db: Sessio
     saving = db.scalar(select(SavingEntry).where(SavingEntry.id == saving_id, SavingEntry.user_id == user.id))
     if not saving:
         raise HTTPException(status_code=404, detail="Saving not found")
-    db.delete(saving)
+    # Borrar un ahorro borra todo el ahorro (sus meses anteriores y sus movimientos): si quedara el mes pasado,
+    # el próximo /dashboard lo traspasaría de nuevo.
+    for entry in db.scalars(select(SavingEntry).where(SavingEntry.user_id == user.id, SavingEntry.series_id == saving.series_id)).all():
+        db.delete(entry)
     db.commit()
 
 
@@ -595,9 +642,10 @@ def list_events(user: User = Depends(current_user), db: Session = Depends(get_db
 
 @app.post("/api/events", response_model=list[EventOut], status_code=status.HTTP_201_CREATED)
 def create_event(payload: EventCreatePayload, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[Event]:
-    data = payload.model_dump(exclude={"repeat_days"})
+    data = payload.model_dump(exclude={"repeat_days", "type"})
     occurrences = _repeat_occurrence_dates(payload.event_date, payload.repeat_days)
-    events = [Event(user_id=user.id, **{**data, "event_date": occurrence}) for occurrence in occurrences]
+    category_id = _category_id(db, user, "agenda", None, payload.type)
+    events = [Event(user_id=user.id, category_id=category_id, **{**data, "event_date": occurrence}) for occurrence in occurrences]
     db.add_all(events)
     db.commit()
     for event in events:
@@ -622,7 +670,10 @@ def update_event(event_id: int, payload: EventUpdate, user: User = Depends(curre
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(event, field, value)
+        if field == "type":
+            event.category_id = _category_id(db, user, "agenda", None, value)
+        else:
+            setattr(event, field, value)
     db.commit()
     db.refresh(event)
     return event
@@ -637,23 +688,26 @@ def delete_event(event_id: int, user: User = Depends(current_user), db: Session 
     db.commit()
 
 
+def _pomodoro_settings_row(db: Session, user: User) -> PomodoroSettings:
+    def find_row() -> PomodoroSettings | None:
+        return db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
+
+    row = find_row()
+    if row is None:
+        row, _ = insert_or_get(db, PomodoroSettings(user_id=user.id), find_row)
+    return row
+
+
 @app.get("/api/pomodoro", response_model=PomodoroOut)
 def get_pomodoro_settings(user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroSettings:
-    settings_row = db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
-    if not settings_row:
-        settings_row = PomodoroSettings(user_id=user.id)
-        db.add(settings_row)
-        db.commit()
-        db.refresh(settings_row)
+    settings_row = _pomodoro_settings_row(db, user)
+    db.refresh(settings_row)
     return settings_row
 
 
 @app.patch("/api/pomodoro", response_model=PomodoroOut)
 def update_pomodoro_settings(payload: PomodoroUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroSettings:
-    settings_row = db.scalar(select(PomodoroSettings).where(PomodoroSettings.user_id == user.id))
-    if not settings_row:
-        settings_row = PomodoroSettings(user_id=user.id)
-        db.add(settings_row)
+    settings_row = _pomodoro_settings_row(db, user)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(settings_row, field, value)
     db.commit()
@@ -678,12 +732,18 @@ def log_pomodoro_seconds(payload: PomodoroLogCreate, user: User = Depends(curren
     _ensure_subject_owned(db, user, payload.subject_id)
     current_day = today()
     subject_filter = PomodoroLog.subject_id.is_(None) if payload.subject_id is None else PomodoroLog.subject_id == payload.subject_id
-    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day, subject_filter))
-    if not row:
-        row = PomodoroLog(user_id=user.id, log_date=current_day, seconds=0, subject_id=payload.subject_id)
-        db.add(row)
-    row.seconds += payload.seconds
-    db.commit()
+
+    def find_row() -> PomodoroLog | None:
+        return db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day, subject_filter))
+
+    row = find_row()
+    created = False
+    if row is None:
+        row, created = insert_or_get(db, PomodoroLog(user_id=user.id, log_date=current_day, seconds=payload.seconds, subject_id=payload.subject_id), find_row)
+    if not created:
+        # Suma en la base (no en Python): dos pedidos a la vez no se pisan.
+        row.seconds = PomodoroLog.seconds + payload.seconds
+        db.commit()
     db.refresh(row)
     # Se devuelve el total del día (todas las materias) para que el gráfico semanal no cambie.
     total = db.scalar(select(func.coalesce(func.sum(PomodoroLog.seconds), 0)).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day))
@@ -699,18 +759,20 @@ def _period_start_for(reference: date_type) -> date_type:
     return reference.replace(day=1)
 
 
-def _entry_duration(entry: HourEntry) -> float:
+def _entry_duration(entry: HourEntry) -> Decimal:
+    """Horas de una jornada. Sin redondear: se redondea el total al cerrar y el valor de cada jornada."""
     if entry.holiday:
-        return 4.0
+        return Decimal(4)
     if entry.hours is not None:
-        return entry.hours
+        return to_decimal(entry.hours)
     from_h, from_m = (int(part) for part in entry.from_time.split(":"))
     to_h, to_m = (int(part) for part in entry.to_time.split(":"))
-    return max(0.0, (to_h * 60 + to_m - from_h * 60 - from_m) / 60)
+    return max(Decimal(0), Decimal(to_h * 60 + to_m - from_h * 60 - from_m) / 60)
 
 
-def _entry_value(entry: HourEntry, rate: float) -> float:
-    return _entry_duration(entry) * rate * (2 if entry.extra else 1)
+def _entry_value(entry: HourEntry, rate: Decimal) -> Decimal:
+    """Lo que vale una jornada, redondeado a centavos (las horas extra pagan el doble)."""
+    return quantize(_entry_duration(entry) * to_decimal(rate) * (2 if entry.extra else 1))
 
 
 # Desde esta fecha los períodos son siempre meses calendario. Antes es historia
@@ -744,10 +806,12 @@ def _resolve_period(db: Session, user: User, reference: date_type) -> PayPeriod:
     if reference < CALENDAR_PERIODS_FROM:
         raise HTTPException(status_code=404, detail="No hay registros para esa fecha")
     last = db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id).order_by(PayPeriod.start.desc()))
-    rate = last.rate if last else 0.0
-    period = PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate)
-    db.add(period)
-    db.commit()
+    rate = last.rate if last else ZERO
+    period, _ = insert_or_get(
+        db,
+        PayPeriod(user_id=user.id, start=start, end=_period_end(start), rate=rate),
+        lambda: db.scalar(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.start == start)),
+    )
     db.refresh(period)
     return period
 
@@ -756,8 +820,8 @@ def _close_period(db: Session, period: PayPeriod, user: User) -> None:
     # Al cerrar se congelan las horas y lo esperado. paid y balance no: los pagos
     # llegan a mes vencido y se calculan en vivo en _build_hours_state.
     entries = db.scalars(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date >= period.start, HourEntry.entry_date <= period.end)).all()
-    period.total_hours = sum(_entry_duration(entry) for entry in entries)
-    period.expected = sum(_entry_value(entry, period.rate) for entry in entries)
+    period.total_hours = quantize(sum((_entry_duration(entry) for entry in entries), Decimal(0)))
+    period.expected = sum((_entry_value(entry, period.rate) for entry in entries), ZERO)
     period.closed = True
 
 
@@ -768,14 +832,14 @@ def _build_hours_state(db: Session, user: User, reference: date_type, period: Pa
     closed_periods = db.scalars(select(PayPeriod).where(PayPeriod.user_id == user.id, PayPeriod.closed.is_(True)).order_by(PayPeriod.start.desc())).all()
     paid_by_period = dict(db.execute(select(HourPayment.period_id, func.sum(HourPayment.amount)).where(HourPayment.user_id == user.id).group_by(HourPayment.period_id)).all())
     # Un período abierto todavía no congeló expected: se calcula con sus jornadas.
-    expected = period.expected if period.closed else sum(_entry_value(entry, period.rate) for entry in entries if period.start <= entry.entry_date <= period.end)
-    paid = paid_by_period.get(period.id, 0.0)
+    expected = period.expected if period.closed else sum((_entry_value(entry, period.rate) for entry in entries if period.start <= entry.entry_date <= period.end), ZERO)
+    paid = paid_by_period.get(period.id, ZERO)
     return HoursStateOut(
         period=PayPeriodOut.model_validate(period).model_copy(update={"paid": paid, "balance": expected - paid}),
         entries=[HourEntryOut.model_validate(entry) for entry in entries],
         payments=[HourPaymentOut.model_validate(payment) for payment in payments],
         closed_periods=[
-            ClosedPeriodOut.model_validate(item).model_copy(update={"paid": paid_by_period.get(item.id, 0.0), "balance": item.expected - paid_by_period.get(item.id, 0.0)})
+            ClosedPeriodOut.model_validate(item).model_copy(update={"paid": paid_by_period.get(item.id, ZERO), "balance": item.expected - paid_by_period.get(item.id, ZERO)})
             for item in closed_periods
         ],
     )
@@ -800,13 +864,18 @@ def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), 
 def upsert_hour_entry(payload: HourEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HourEntry:
     _ensure_not_history(payload.entry_date)
     _ensure_entry_period_open(db, user, payload.entry_date)
-    entry = db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
-    if entry:
-        for field, value in payload.model_dump().items():
-            setattr(entry, field, value)
-    else:
-        entry = HourEntry(user_id=user.id, **payload.model_dump())
-        db.add(entry)
+
+    def find_entry() -> HourEntry | None:
+        return db.scalar(select(HourEntry).where(HourEntry.user_id == user.id, HourEntry.entry_date == payload.entry_date))
+
+    entry = find_entry()
+    if entry is None:
+        entry, created = insert_or_get(db, HourEntry(user_id=user.id, **payload.model_dump()), find_entry)
+        if created:
+            db.refresh(entry)
+            return entry
+    for field, value in payload.model_dump().items():
+        setattr(entry, field, value)
     db.commit()
     db.refresh(entry)
     return entry

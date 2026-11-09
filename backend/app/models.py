@@ -1,7 +1,8 @@
+import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .clock import today, utcnow
@@ -41,7 +42,13 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200))
     due_date: Mapped[date] = mapped_column(Date, default=today, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_tasks_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def category(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -58,6 +65,10 @@ class Category(Base):
     kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
+# Un nombre por usuario, ámbito y tipo, sin distinguir mayúsculas (kind NULL cuenta como ""; en SQL los NULL nunca chocan).
+Index("uq_categories_user_scope_kind_name", Category.user_id, Category.scope, func.coalesce(Category.kind, ""), func.lower(Category.name), unique=True)
+
+
 class Habit(Base):
     __tablename__ = "habits"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -71,6 +82,7 @@ class Habit(Base):
 
 class HabitLog(Base):
     __tablename__ = "habit_logs"
+    __table_args__ = (Index("uq_habit_logs_habit_id_log_date", "habit_id", "log_date", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     habit_id: Mapped[int] = mapped_column(ForeignKey("habits.id"), index=True)
@@ -83,19 +95,32 @@ class Transaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     description: Mapped[str] = mapped_column(String(200))
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     kind: Mapped[str] = mapped_column(String(20))
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_transactions_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def category(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     method: Mapped[str] = mapped_column(String(20), default="Efectivo")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class SavingEntry(Base):
     __tablename__ = "saving_entries"
+    __table_args__ = (
+        Index("uq_saving_entries_user_id_name_month", "user_id", "name", "month", unique=True),
+        Index("uq_saving_entries_user_id_series_id_month", "user_id", "series_id", "month", unique=True),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Todas las filas mensuales de un mismo ahorro comparten series_id: así renombrar o borrar el ahorro del mes actual
+    # alcanza a todo el ahorro y el traspaso al mes siguiente no lo revive ni lo duplica.
+    series_id: Mapped[str] = mapped_column(String(36), index=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(100))
-    start_amount: Mapped[float] = mapped_column(Float, default=0)
+    start_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     month: Mapped[str] = mapped_column(String(7), index=True)
     movements: Mapped[list["SavingMovement"]] = relationship(cascade="all, delete-orphan")
 
@@ -105,7 +130,7 @@ class SavingMovement(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     saving_id: Mapped[int] = mapped_column(ForeignKey("saving_entries.id"), index=True)
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     movement_date: Mapped[date] = mapped_column(Date, default=today)
 
 
@@ -116,7 +141,13 @@ class Event(Base):
     title: Mapped[str] = mapped_column(String(200))
     event_date: Mapped[date] = mapped_column(Date, index=True)
     time: Mapped[str] = mapped_column(String(5), default="09:00")
-    type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_events_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def type(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     color: Mapped[str] = mapped_column(String(10), default="#d9f99d")
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     important: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -133,29 +164,31 @@ class PomodoroSettings(Base):
 
 class PayPeriod(Base):
     __tablename__ = "pay_periods"
+    __table_args__ = (Index("uq_pay_periods_user_id_start", "user_id", "start", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     start: Mapped[date] = mapped_column(Date)
     end: Mapped[date] = mapped_column(Date)
-    rate: Mapped[float] = mapped_column(Float, default=0)
+    rate: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     closed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    total_hours: Mapped[float] = mapped_column(Float, default=0)
-    expected: Mapped[float] = mapped_column(Float, default=0)
+    total_hours: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("0.00"))
+    expected: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     # paid y balance ya no son fuente de verdad: se calculan en vivo desde hour_payments
     # porque un período cerrado sigue recibiendo pagos. Se quitan en una migración posterior.
-    paid: Mapped[float] = mapped_column(Float, default=0)
-    balance: Mapped[float] = mapped_column(Float, default=0)
+    paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     payments: Mapped[list["HourPayment"]] = relationship(cascade="all, delete-orphan")
 
 
 class HourEntry(Base):
     __tablename__ = "hour_entries"
+    __table_args__ = (Index("uq_hour_entries_user_id_entry_date", "user_id", "entry_date", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     entry_date: Mapped[date] = mapped_column(Date, index=True)
     from_time: Mapped[str] = mapped_column(String(5), default="09:00")
     to_time: Mapped[str] = mapped_column(String(5), default="17:00")
-    hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
     extra: Mapped[bool] = mapped_column(Boolean, default=False)
     holiday: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -165,13 +198,24 @@ class HourPayment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     period_id: Mapped[int] = mapped_column(ForeignKey("pay_periods.id"), index=True)
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     method: Mapped[str] = mapped_column(String(30), default="Transferencia")
     payment_date: Mapped[date] = mapped_column(Date)
 
 
 class PomodoroLog(Base):
     __tablename__ = "pomodoro_logs"
+    __table_args__ = (
+        # Una fila por día y materia; los NULL no chocan entre sí, por eso "sin materia" tiene su propio índice parcial.
+        Index(
+            "uq_pomodoro_logs_user_id_log_date_subject",
+            "user_id", "log_date", "subject_id",
+            unique=True,
+            sqlite_where=text("subject_id IS NOT NULL"),
+            postgresql_where=text("subject_id IS NOT NULL"),
+        ),
+        Index("uq_pomodoro_logs_user_id_log_date_no_subject", "user_id", "log_date", unique=True, sqlite_where=text("subject_id IS NULL"), postgresql_where=text("subject_id IS NULL")),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     log_date: Mapped[date] = mapped_column(Date, index=True)
@@ -185,7 +229,13 @@ class ShoppingItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # La categoría se guarda por id: renombrarla es un solo UPDATE sobre categories. Si se borra, queda en NULL.
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL", name="fk_shopping_items_category_id_categories"), nullable=True, index=True)
+    category_ref: Mapped["Category | None"] = relationship(lazy="joined")
+
+    @property
+    def category(self) -> str | None:
+        return self.category_ref.name if self.category_ref else None
     stock: Mapped[int] = mapped_column(Integer, default=0)
     force_list: Mapped[bool] = mapped_column(Boolean, default=False)
     buy_quantity: Mapped[int] = mapped_column(Integer, default=1)
