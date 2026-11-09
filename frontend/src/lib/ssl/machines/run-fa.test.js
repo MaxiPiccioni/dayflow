@@ -59,9 +59,10 @@ describe("AFND", () => {
   });
   it("λ: cierre y aceptación (ejercicio 17)", () => {
     expect([...lambdaClosure(afnd17, ["a"])].sort()).toEqual(["a", "b", "c"]);
-    expect(runFa(afnd17, "11221").accepted).toBe(true);
+    // El árbol de 11221 de la guía termina en (b, λ), que no es de aceptación: la cadena no se reconoce (122 sí).
+    expect(runFa(afnd17, "11221").accepted).toBe(false);
     expect(runFa(afnd17, "122").accepted).toBe(true);
-    expect(acceptsFa(afnd17, "11221")).toBe(true);
+    expect(acceptsFa(afnd17, "11221")).toBe(false);
   });
   it("los ciclos λ no cuelgan el ejecutor", () => {
     const loop = afFromTable({ type: "afnd", alphabet: ["a"], extraColumns: ["λ"], start: "p", accepting: ["q"], rows: [["p", "-", "q"], ["q", "-", "p"]] });
