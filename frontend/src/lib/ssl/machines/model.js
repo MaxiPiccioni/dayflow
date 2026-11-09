@@ -8,6 +8,7 @@
 //   extra: string[],               // símbolos auxiliares de cinta o de pila (Ω / no terminales)
 //   bottom: "#", blank: "b",       // fondo de pila (AP) y blanco (MT)
 //   pushMode: "natural" | "production",  // AP: cómo se apila lo que va tras la "/" (ver run-ap.js)
+//   acceptBy: "both" | "state" | "empty", // AP: condición de aceptación (la guía usa "both")
 //   states: [{ id, x, y }], initial, accepting: string[],
 //   transitions: [{ id, from, to, ... }]
 // }
@@ -36,6 +37,7 @@ export function createMachine(type, options = {}) {
     bottom: options.bottom ?? "#",
     blank: options.blank ?? "b",
     pushMode: options.pushMode ?? "natural",
+    acceptBy: options.acceptBy ?? "both",
     states: [],
     initial: null,
     accepting: [],
@@ -349,7 +351,7 @@ export function importMachine(raw) {
     return { error: "El archivo no es un JSON válido." };
   }
   if (!data || typeof data !== "object" || !MACHINE_TYPES.includes(data.type)) return { error: "El JSON no es un autómata del sandbox." };
-  const base = createMachine(data.type, { name: typeof data.name === "string" ? data.name : "", alphabet: Array.isArray(data.alphabet) ? data.alphabet.map(String) : [], extra: Array.isArray(data.extra) ? data.extra.map(String) : [], bottom: data.bottom, blank: data.blank, pushMode: data.pushMode });
+  const base = createMachine(data.type, { name: typeof data.name === "string" ? data.name : "", alphabet: Array.isArray(data.alphabet) ? data.alphabet.map(String) : [], extra: Array.isArray(data.extra) ? data.extra.map(String) : [], bottom: data.bottom, blank: data.blank, pushMode: data.pushMode, acceptBy: data.acceptBy });
   let machine = base;
   for (const s of Array.isArray(data.states) ? data.states : []) {
     const r = addState(machine, { id: String(s.id), x: Number(s.x) || 80, y: Number(s.y) || 80 });
