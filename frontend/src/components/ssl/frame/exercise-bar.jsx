@@ -12,13 +12,13 @@ const primary = "flex shrink-0 items-center gap-1 rounded-xl border border-zinc-
 
 // Rectángulo del ejercicio: enunciado, partes (a, b, c…), aclaraciones y, a la derecha, Comprobar, Anterior, Siguiente,
 // el índice y la marca de hecho.
-export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, partIndex, onPart, canCheck, onCheck }) {
+export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, partIndex, canCheck, onCheck }) {
   const session = useSession();
   const { kind } = item;
   const exercise = item.exercise;
   const parts = kind === "exercise" ? exercise.parts : [];
   const part = parts[partIndex];
-  const notes = kind === "exercise" ? [exercise.dubious, exercise.note, part?.note, exercise.figure ? `El enunciado incluye una figura: ${exercise.figure}.` : ""].filter(Boolean) : [];
+  const notes = kind === "exercise" ? [exercise.dubious, exercise.note, parts.length <= 1 ? part?.note : "", exercise.figure ? `El enunciado incluye una figura: ${exercise.figure}.` : ""].filter(Boolean) : [];
   const done = kind === "exercise" && !!progress.done[exercise.id];
   const statement = kind === "exercise" ? exercise.statement : item.example.statement;
   const heading = kind === "exercise" ? `Ejercicio n° ${exercise.number}:` : `Ejemplo resuelto: ${item.example.title.replace(/^Ejemplo resuelto:\s*/i, "")}`;
@@ -32,14 +32,7 @@ export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, par
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-lime-700 dark:text-lime-400">{heading}{kind === "exercise" && exercise.page ? <span className="ml-2 font-normal normal-case tracking-normal text-zinc-400">guía pág. {exercise.page}</span> : null}</p>
           <MathText text={statement} className="mt-0.5 block" />
           {kind === "exercise" && exercise.tables && <div className="mt-2 flex flex-wrap gap-3">{exercise.tables.map((table) => <TransitionTable key={table.name} table={table} />)}</div>}
-          {parts.length > 1 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Incisos del ejercicio">
-              {parts.map((p, i) => (
-                <button key={p.id || i} type="button" aria-pressed={i === partIndex} onClick={() => onPart(i)} className={`rounded-full px-3 py-1 text-xs font-semibold ${i === partIndex ? "bg-zinc-900 text-white dark:bg-lime-400 dark:text-zinc-950" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>{p.id || i + 1})</button>
-              ))}
-            </div>
-          )}
-          {part?.prompt && <p className="mt-2 font-medium">{part.id && <span className="mr-1 font-semibold text-lime-700 dark:text-lime-400">{part.id})</span>}<MathText text={part.prompt} className="font-mono" /></p>}
+          {parts.length <= 1 && part?.prompt && <p className="mt-2 font-medium">{part.id && <span className="mr-1 font-semibold text-lime-700 dark:text-lime-400">{part.id})</span>}<MathText text={part.prompt} className="font-mono" /></p>}
           {notes.length > 0 && (
             <details className="mt-1 text-xs text-amber-800 dark:text-amber-300">
               <summary className="cursor-pointer font-medium">Aclaraciones ({notes.length})</summary>

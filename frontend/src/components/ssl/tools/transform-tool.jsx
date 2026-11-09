@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StepReveal } from "@/components/ssl/step-reveal";
 import { GrammarFields } from "@/components/ssl/tools/grammar-fields";
 import { fmtWord } from "@/lib/ssl/notation";
@@ -39,7 +40,8 @@ function SamplePair({ before, after }) {
 
 // Aplica un procedimiento (limpiar, bien formar, quitar recursividad por izquierda, FNC o FNG) mostrando cada paso.
 export function TransformTool({ tool }) {
-  const mode = MODES[tool.mode];
+  const [modeKey, setModeKey] = useState(tool.mode);
+  const mode = MODES[modeKey];
   const [fields, setFields] = useState(tool.grammar);
   const parsed = useMemo(() => parseGrammar(fields), [fields]);
   const outcome = useMemo(() => {
@@ -53,13 +55,20 @@ export function TransformTool({ tool }) {
 
   return (
     <div className="space-y-4">
+      <label className="block text-xs text-zinc-500">
+        Transformación
+        <Select value={modeKey} onValueChange={setModeKey}>
+          <SelectTrigger className="mt-1 w-full sm:w-80" aria-label="Transformación de la gramática"><SelectValue /></SelectTrigger>
+          <SelectContent>{Object.entries(MODES).map(([key, { title }]) => <SelectItem key={key} value={key}>{title}</SelectItem>)}</SelectContent>
+        </Select>
+      </label>
       <GrammarFields fields={fields} onChange={setFields} />
       {parsed.error && <p role="alert" className="text-sm text-red-600">{parsed.error}</p>}
       {outcome && (
         <div className="space-y-4">
           <div>
             <p className="mb-2 text-xs font-semibold text-zinc-500">Procedimiento: {mode.title}</p>
-            {outcome.steps.length > 0 && <StepReveal key={JSON.stringify(fields) + tool.mode} steps={outcome.steps} />}
+            {outcome.steps.length > 0 && <StepReveal key={JSON.stringify(fields) + modeKey} steps={outcome.steps} />}
           </div>
           {(outcome.error || outcome.empty) && <p role="status" className="text-sm text-red-600">{outcome.error ?? "La gramática no genera ninguna cadena."}</p>}
           {outcome.warnings?.map((warning) => <p key={warning} className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">{warning}</p>)}
@@ -70,7 +79,7 @@ export function TransformTool({ tool }) {
               {outcome.valid === false && <p className="mt-1 text-xs text-red-600">El resultado no cumple la forma pedida.</p>}
             </div>
           )}
-          {tool.mode === "fnc" && outcome.grammar && <SamplePair before={parsed.grammar} after={outcome.grammar} />}
+          {modeKey === "fnc" && outcome.grammar && <SamplePair before={parsed.grammar} after={outcome.grammar} />}
         </div>
       )}
     </div>

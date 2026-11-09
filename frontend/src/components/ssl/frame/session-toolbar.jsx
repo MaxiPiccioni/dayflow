@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   BookOpenCheck, CircleCheckBig, CirclePlus, Eraser, FolderOpen, Download, Lightbulb, Link2, MousePointer2, Pencil, Play, Plus, Redo2,
   RefreshCw, RotateCcw, Save, ShieldAlert, SlidersHorizontal, Square, StepBack, StepForward, Trash2, Undo2, Upload, Flag, Hand, Workflow,
@@ -32,7 +32,38 @@ function Tool({ icon: Icon, label, onClick, pressed, disabled, danger = false, c
   );
 }
 
-const Divider = () => <span aria-hidden="true" className="mx-0.5 my-0.5 h-px w-6 shrink-0 self-center bg-zinc-200 max-md:h-6 max-md:w-px dark:bg-zinc-700" />;
+// Los separadores solo se ven si el ancho de la barra lo permite; al compactar en columnas se ocultan.
+const Divider = () => <span aria-hidden="true" className="hidden" />;
+
+// Cantidad de columnas con la que todos los botones entran en el alto disponible: arranca en 1 y suma columnas mientras
+// el contenido se pase. Se recalcula al cambiar el alto de la ventana o la cantidad de botones.
+function useFitColumns(ref, signature) {
+  const [state, setState] = useState({ cols: 1, signature });
+  const cols = state.signature === signature ? state.cols : 1;
+  const [height, setHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const observer = new ResizeObserver(() => setHeight(el.clientHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !window.matchMedia("(min-width: 768px)").matches) return;
+    if (el.scrollHeight > el.clientHeight + 1 && cols < 8) setState({ cols: cols + 1, signature });
+  }, [ref, cols, signature, height]);
+
+  // Si cambió el alto, vuelve a empezar desde una columna.
+  const lastHeight = useRef(height);
+  useLayoutEffect(() => {
+    if (lastHeight.current !== height) { lastHeight.current = height; setState({ cols: 1, signature }); }
+  }, [height, signature]);
+
+  return cols;
+}
 
 // Barra de comandos del sandbox: angosta y a la izquierda (en celular, una fila de íconos con scroll propio). Los dos últimos
 // botones son Play/Stop (hace funcionar la máquina y la frena) y Pistas.
@@ -46,12 +77,21 @@ export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive, tools =
   const canvas = !!s;
   const tape = s && isTape(s.machine);
 
+  const barRef = useRef(null);
+  const cols = useFitColumns(barRef, `${canvas}-${ro}-${tools.length}-${s?.machine.type ?? ""}`);
+
   const act = (fn, tab) => () => { fn(); if (tab) onOpenTab(tab); };
   const toggleFlyout = (name) => setFlyout((current) => (current === name ? null : name));
 
   return (
-    <div className="relative z-30 shrink-0 border-zinc-200 bg-white/90 max-md:border-b md:border-r dark:border-zinc-800 dark:bg-zinc-950/90">
-      <div role="toolbar" aria-label="Comandos del sandbox" className="scrollbar-thin flex gap-1 overflow-x-auto p-1.5 max-md:flex-row md:h-full md:w-[52px] md:flex-col md:overflow-y-auto md:overflow-x-visible">
+    <div className="relative z-30 shrink-0 border-zinc-200 bg-white/90 max-md:border-b md:flex md:flex-col md:border-r dark:border-zinc-800 dark:bg-zinc-950/90">
+      <div
+        ref={barRef}
+        role="toolbar"
+        aria-label="Comandos del sandbox"
+        style={{ "--cols": cols }}
+        className="flex flex-wrap gap-1 p-1.5 md:grid md:min-h-0 md:flex-1 md:content-start md:overflow-hidden md:[grid-template-columns:repeat(var(--cols),2.25rem)]"
+      >
         {canvas && !ro && (
           <>
             <Tool icon={MousePointer2} label="Mover y elegir estados" pressed={s.editor.mode === "select"} onClick={() => s.editor.setMode("select")} />

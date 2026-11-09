@@ -5,12 +5,12 @@ import { useSession } from "@/components/ssl/frame/session-context";
 import { analyze } from "@/lib/ssl/machines/model";
 
 // Lienzo del autómata: ocupa todo el espacio libre; arriba, avisos cortos del modo de edición.
-export function SessionCanvas() {
+export function SessionCanvas({ onOpenTab }) {
   const s = useSession();
   const { machine, editor } = s;
   const { warnings, errors } = analyze(machine);
   const hint = !s.readOnly && editor.mode === "link"
-    ? (editor.linkFrom ? `Origen: ${editor.linkFrom}. Hacé clic en el estado de destino (el mismo estado hace un bucle).` : "Unir: hacé clic en el estado de origen y después en el de destino.")
+    ? (editor.linkFrom ? `Origen: ${editor.linkFrom}. Hacé clic en el estado de destino (el mismo estado hace un bucle).` : "Unir: hacé clic en el estado de origen y después en el de destino; después ponele la etiqueta en el panel.")
     : !s.readOnly && editor.mode === "state" ? "Hacé clic en un lugar vacío del lienzo para agregar un estado." : "";
 
   return (
@@ -34,7 +34,7 @@ export function SessionCanvas() {
           onChange={editor.change}
           onSelect={editor.select}
           onDelete={s.doDelete}
-          onRequestTransition={(from, to) => s.setPending({ from, to })}
+          onRequestTransition={(from, to) => { s.setPending({ from, to }); onOpenTab?.("transiciones"); }}
           linkFrom={editor.linkFrom}
           onLinkFrom={editor.setLinkFrom}
         />
