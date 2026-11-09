@@ -20,7 +20,7 @@ function ModeButton({ mode, current, setMode, icon: Icon, label }) {
   );
 }
 
-function TransitionRow({ machine, t, editor, readOnly }) {
+export function TransitionRow({ machine, t, editor, readOnly }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -65,7 +65,7 @@ function TransitionRow({ machine, t, editor, readOnly }) {
 }
 
 // Formulario "De / A / etiqueta": alternativa accesible (y cómoda en celular) a unir estados con el mouse.
-function TransitionForm({ machine, editor, pending, setPending }) {
+export function TransitionForm({ machine, editor, pending, setPending }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [text, setText] = useState("");
@@ -113,7 +113,7 @@ function TransitionForm({ machine, editor, pending, setPending }) {
   );
 }
 
-function StatePanel({ machine, editor, id, readOnly }) {
+export function StatePanel({ machine, editor, id, readOnly }) {
   const [name, setName] = useState(id);
   const [error, setError] = useState("");
   const rename = () => {
@@ -188,7 +188,7 @@ export function TableView({ machine }) {
   );
 }
 
-function SettingsPanel({ machine, editor, lockAlphabet }) {
+export function SettingsPanel({ machine, editor, lockAlphabet }) {
   const [alphabet, setAlphabet] = useState(machine.alphabet.join(", "));
   const [extra, setExtra] = useState(machine.extra.join(", "));
   const toList = (text) => [...new Set(text.split(/[,\s]+/).filter(Boolean).flatMap((x) => Array.from(x).length === 1 ? [x] : Array.from(x)))];
