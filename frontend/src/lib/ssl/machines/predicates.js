@@ -125,6 +125,40 @@ export const PREDICATES = {
     }
     return stack.length === 0;
   },
+  // Unidad 6: cantidad par de ceros y par de unos a la vez.
+  "even-zeros-even-ones": (w, { emptyOptional = true }) => {
+    if (w === "" && emptyOptional) return null;
+    return count(w, "0") % 2 === 0 && count(w, "1") % 2 === 0;
+  },
+  // Bytes αα con α de cuatro bits.
+  "byte-double": (w) => Array.from(w).length === 8 && w.slice(0, 4) === w.slice(4),
+  // Palíndromos (parity: "even" | "odd" | "any"); la cadena vacía queda a criterio con emptyOptional.
+  "palindrome": (w, { parity = "any", emptyOptional = false }) => {
+    if (w === "" && emptyOptional) return null;
+    const chars = Array.from(w);
+    if (parity === "even" && chars.length % 2 !== 0) return false;
+    if (parity === "odd" && chars.length % 2 !== 1) return false;
+    return chars.join("") === chars.reverse().join("");
+  },
+  // x^n y^n z^n con n >= 1.
+  "triple-blocks": (w, { x, y, z }) => {
+    const n = Array.from(w).length / 3;
+    return Number.isInteger(n) && n >= 1 && w === x.repeat(n) + y.repeat(n) + z.repeat(n);
+  },
+  // 1^m 2^n 3^m 4^n con m, n >= 1.
+  "abab-blocks": (w, { a, b, c, d }) => {
+    const m = new RegExp(`^(${a}+)(${b}+)(${c}+)(${d}+)$`).exec(w);
+    return !!m && m[1].length === m[3].length && m[2].length === m[4].length;
+  },
+  // Dos palabras binarias iguales separadas por * (ejercicio 11).
+  "equal-star": (w) => /^([01]*)\*\1$/.test(w),
+  // α#α⁻¹ con α en {0,1}⁺ (ejercicio 32).
+  "reverse-hash": (w) => { const m = /^([01]+)#([01]+)$/.exec(w); return !!m && m[2] === Array.from(m[1]).reverse().join(""); },
+  // Misma cantidad de ceros y de unos (ejercicio 15).
+  "equal-count": (w, { emptyOptional = true }) => {
+    if (w === "" && emptyOptional) return null;
+    return count(w, "0") === count(w, "1");
+  },
 };
 
 // Predicado de una especificación: { predicate: "id", params }.

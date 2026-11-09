@@ -115,6 +115,8 @@ export function checkMachine(machine, spec) {
 
     if (spec.kind === "machine-output") {
       if (!isTape(machine)) return bad("Este ejercicio se resuelve con una máquina que escribe en la cinta.");
+      const banned = spec.forbidMoves?.find((move) => machine.transitions.some((t) => t.move === move));
+      if (banned) return bad(`Este ejercicio no permite el movimiento ${banned}: revisá las transiciones que lo usan.`);
       const expectedOf = spec.fn ? (input) => OUTPUTS[spec.fn](input, spec.params ?? {}) : null;
       const inputs = [...(spec.inputs ?? [])];
       if (spec.generate) for (const w of allStrings(spec.generate.alphabet, spec.generate.maxLen)) if (w.length >= (spec.generate.minLen ?? 1) && (!spec.generate.filter || new RegExp(spec.generate.filter).test(w))) inputs.push(w);

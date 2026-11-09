@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Copy, Download, FolderOpen, Save, Trash2, Upload, XCircle } from "lucide-react";
 import { MachineEditor } from "@/components/ssl/editor/machine-editor";
+import { ComplexityPanel } from "@/components/ssl/editor/complexity-panel";
 import { MachineRunner } from "@/components/ssl/editor/machine-runner";
 import { useMachineEditor } from "@/components/ssl/editor/use-machine-editor";
 import { useMachineStore } from "@/components/ssl/editor/use-machine-store";
@@ -87,12 +88,20 @@ function SavedPanel({ exerciseKey, machine, editor, config }) {
 export function MachineWorkbench({ config, exerciseKey, savedJson, onSaveWorking }) {
   const initial = useMemo(() => startingMachine(config, savedJson), [config, savedJson]);
   // Guardado de la copia de trabajo con un pequeño retraso (arrastrar un estado cambia la máquina muchas veces).
+  // Si se cambia de sección antes de que venza el retraso, al desmontar se guarda igual lo pendiente.
   const timer = useRef(null);
+  const pending = useRef(null);
+  const saveRef = useRef(onSaveWorking);
+  useEffect(() => { saveRef.current = onSaveWorking; }, [onSaveWorking]);
   const onMachineChange = useCallback((m) => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => onSaveWorking?.(JSON.stringify(m)), 400);
-  }, [onSaveWorking]);
-  useEffect(() => () => clearTimeout(timer.current), []);
+    pending.current = JSON.stringify(m);
+    timer.current = setTimeout(() => { const json = pending.current; pending.current = null; if (json) saveRef.current?.(json); }, 400);
+  }, []);
+  useEffect(() => () => {
+    clearTimeout(timer.current);
+    if (pending.current) { saveRef.current?.(pending.current); pending.current = null; }
+  }, []);
 
   const editor = useMachineEditor(initial, onMachineChange);
   const [highlight, setHighlight] = useState(null);
@@ -115,6 +124,7 @@ export function MachineWorkbench({ config, exerciseKey, savedJson, onSaveWorking
     <div className="space-y-3">
       <MachineEditor editor={editor} readOnly={config.readOnly} lockAlphabet={config.lockAlphabet} highlight={highlight} />
       <MachineRunner machine={editor.machine} onHighlight={setHighlight} examples={config.runExamples ?? []} initialInput={config.runExamples?.[0] ?? ""} />
+      {config.complexity && <ComplexityPanel machine={editor.machine} family={config.complexity} />}
 
       <div className="flex flex-wrap items-center gap-2">
         {config.spec && <button type="button" onClick={verify} className={`${button} ${primary}`}>Comprobar mi autómata</button>}
