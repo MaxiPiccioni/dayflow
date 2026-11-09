@@ -4,10 +4,12 @@ from datetime import date as date_type
 from datetime import timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .clock import today
 from .config import settings
 from .database import get_db
 from .deps import current_user
@@ -61,10 +63,12 @@ from .schemas import (
     UserOut,
 )
 from .security import create_access_token, hash_password, verify_password
+from .validation import validation_error_handler
 
 # En producción no se expone la documentación interactiva ni el esquema OpenAPI.
 docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.is_production else {}
 app = FastAPI(title="Dayflow API", version="0.1.0", dependencies=[Depends(rate_limit)], **docs_kwargs)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
 
 # La autenticación va por header Authorization (Bearer), no por cookies, así que
 # no hace falta allow_credentials.
@@ -157,7 +161,7 @@ def _build_habit_out(db: Session, habit: Habit, today: date_type) -> HabitOut:
 
 
 def _resolve_today(client_today: date_type | None) -> date_type:
-    return client_today or date_type.today()
+    return client_today or today()
 
 
 def _habit_logs_by_habit_id(db: Session, habit_ids: list[int]) -> dict[int, dict[date_type, int]]:
@@ -522,7 +526,7 @@ def delete_transaction(transaction_id: int, user: User = Depends(current_user), 
 
 @app.post("/api/savings", response_model=SavingEntryOut, status_code=status.HTTP_201_CREATED)
 def create_saving(payload: SavingEntryCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SavingEntryOut:
-    saving = SavingEntry(user_id=user.id, name=payload.name.strip(), start_amount=payload.start_amount, month=date_type.today().strftime("%Y-%m"))
+    saving = SavingEntry(user_id=user.id, name=payload.name.strip(), start_amount=payload.start_amount, month=today().strftime("%Y-%m"))
     db.add(saving)
     db.commit()
     db.refresh(saving)
@@ -659,8 +663,8 @@ def update_pomodoro_settings(payload: PomodoroUpdate, user: User = Depends(curre
 
 @app.get("/api/pomodoro/history", response_model=list[PomodoroLogOut])
 def get_pomodoro_history(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[PomodoroLogOut]:
-    today = date_type.today()
-    start = today - timedelta(days=(today.weekday() + 1) % 7)
+    current_day = today()
+    start = current_day - timedelta(days=(current_day.weekday() + 1) % 7)
     end = start + timedelta(days=6)
     rows = db.scalars(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date >= start, PomodoroLog.log_date <= end)).all()
     by_date: dict[date_type, int] = {}
@@ -672,17 +676,17 @@ def get_pomodoro_history(user: User = Depends(current_user), db: Session = Depen
 @app.post("/api/pomodoro/log", response_model=PomodoroLogOut)
 def log_pomodoro_seconds(payload: PomodoroLogCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PomodoroLogOut:
     _ensure_subject_owned(db, user, payload.subject_id)
-    today = date_type.today()
+    current_day = today()
     subject_filter = PomodoroLog.subject_id.is_(None) if payload.subject_id is None else PomodoroLog.subject_id == payload.subject_id
-    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today, subject_filter))
+    row = db.scalar(select(PomodoroLog).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day, subject_filter))
     if not row:
-        row = PomodoroLog(user_id=user.id, log_date=today, seconds=0, subject_id=payload.subject_id)
+        row = PomodoroLog(user_id=user.id, log_date=current_day, seconds=0, subject_id=payload.subject_id)
         db.add(row)
     row.seconds += payload.seconds
     db.commit()
     db.refresh(row)
     # Se devuelve el total del día (todas las materias) para que el gráfico semanal no cambie.
-    total = db.scalar(select(func.coalesce(func.sum(PomodoroLog.seconds), 0)).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == today))
+    total = db.scalar(select(func.coalesce(func.sum(PomodoroLog.seconds), 0)).where(PomodoroLog.user_id == user.id, PomodoroLog.log_date == current_day))
     return PomodoroLogOut(date=row.log_date, seconds=int(total))
 
 
@@ -779,12 +783,12 @@ def _build_hours_state(db: Session, user: User, reference: date_type, period: Pa
 
 @app.get("/api/hours", response_model=HoursStateOut)
 def get_hours(reference_date: date_type | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    return _build_hours_state(db, user, reference_date or date_type.today())
+    return _build_hours_state(db, user, reference_date or today())
 
 
 @app.patch("/api/hours/period", response_model=HoursStateOut)
 def update_period_rate(payload: RateUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    reference = payload.reference_date or date_type.today()
+    reference = payload.reference_date or today()
     _ensure_not_history(reference)
     period = _resolve_period(db, user, reference)
     period.rate = payload.rate
@@ -820,7 +824,7 @@ def delete_hour_entry(entry_id: int, user: User = Depends(current_user), db: Ses
 
 @app.post("/api/hours/payments", response_model=HoursStateOut, status_code=status.HTTP_201_CREATED)
 def create_payment(payload: HourPaymentRequest, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    reference = payload.reference_date or date_type.today()
+    reference = payload.reference_date or today()
     period = _resolve_period(db, user, reference)
     payment = HourPayment(user_id=user.id, period_id=period.id, amount=payload.amount, method=payload.method, payment_date=payload.payment_date)
     db.add(payment)
@@ -849,14 +853,14 @@ def delete_payment(payment_id: int, user: User = Depends(current_user), db: Sess
 
 @app.post("/api/hours/close", response_model=HoursStateOut)
 def close_period(payload: CloseRequest, user: User = Depends(current_user), db: Session = Depends(get_db)) -> HoursStateOut:
-    reference = payload.reference_date or date_type.today()
+    reference = payload.reference_date or today()
     _ensure_not_history(reference)
     period = _resolve_period(db, user, reference)
     if period.closed:
         raise HTTPException(status_code=400, detail="Period already closed")
     _close_period(db, period, user)
     db.commit()
-    return _build_hours_state(db, user, date_type.today())
+    return _build_hours_state(db, user, today())
 
 
 @app.post("/api/hours/periods/{period_id}/reopen", response_model=HoursStateOut)
@@ -881,7 +885,7 @@ def delete_period(period_id: int, user: User = Depends(current_user), db: Sessio
         db.delete(entry)
     db.delete(period)
     db.commit()
-    return _build_hours_state(db, user, date_type.today())
+    return _build_hours_state(db, user, today())
 
 
 @app.get("/api/hours/periods/{period_id}/payments", response_model=list[HourPaymentOut])

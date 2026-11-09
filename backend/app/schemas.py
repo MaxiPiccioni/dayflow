@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
 from pydantic_core import PydanticCustomError
 
+from .clock import today
+
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -32,7 +34,7 @@ class UserOut(BaseModel):
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    due_date: date = Field(default_factory=date.today)
+    due_date: date = Field(default_factory=today)
     time: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
     category: str | None = Field(default=None, min_length=1, max_length=50)
     notes: str | None = Field(default=None, max_length=2000)
@@ -175,7 +177,7 @@ class SavingEntryOut(BaseModel):
 
 class SavingMovementCreate(BaseModel):
     amount: float
-    movement_date: date = Field(default_factory=date.today)
+    movement_date: date = Field(default_factory=today)
 
 
 class SavingMovementOut(BaseModel):

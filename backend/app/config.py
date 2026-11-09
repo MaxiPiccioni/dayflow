@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # Cantidad de proxies de confianza delante de la app (Render = 1). Se usa para
     # leer la IP real del cliente desde X-Forwarded-For. 0 = sin proxy (local).
     trusted_proxy_hops: int = 0
+    # Zona horaria que define qué día es "hoy" para la app (el servidor corre en UTC).
+    app_timezone: str = "America/Argentina/Buenos_Aires"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

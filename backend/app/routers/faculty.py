@@ -2,12 +2,13 @@
 
 from collections import defaultdict
 from collections.abc import Iterable
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
+from ..clock import today
 from ..database import get_db
 from ..deps import current_user
 from ..models import FolderLink, PomodoroLog, Subject, SubjectFolder, SubjectRequirement, Task, User
@@ -188,8 +189,8 @@ def list_subjects(user: User = Depends(current_user), db: Session = Depends(get_
 @router.get("/study", response_model=list[SubjectStudyOut])
 def study_summary(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[SubjectStudyOut]:
     """Tiempo de estudio (Pomodoro) y tareas pendientes por materia. Solo materias con algún dato."""
-    today = date.today()
-    week_start = today - timedelta(days=(today.weekday() + 1) % 7)  # semana de domingo a sábado, igual que el gráfico
+    current = today()
+    week_start = current - timedelta(days=(current.weekday() + 1) % 7)  # semana de domingo a sábado, igual que el gráfico
     totals = {sid: secs for sid, secs in db.execute(
         select(PomodoroLog.subject_id, func.sum(PomodoroLog.seconds))
         .where(PomodoroLog.user_id == user.id, PomodoroLog.subject_id.is_not(None))
