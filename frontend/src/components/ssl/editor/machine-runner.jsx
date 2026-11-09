@@ -84,7 +84,7 @@ export function MachineRunner({ machine, onHighlight, initialInput = "", example
 
   const last = run && !run.error ? run.total - 1 : 0;
   const finished = !!run && !run.error && k >= last;
-  const step = run && !run.error ? run.at(k) : null;
+  const step = useMemo(() => (run && !run.error ? run.at(k) : null), [run, k]);
 
   useEffect(() => {
     onHighlight?.(started && step ? { states: step.states, edges: step.edges } : null);

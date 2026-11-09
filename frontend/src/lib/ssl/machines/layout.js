@@ -32,7 +32,7 @@ export function edgeGeometry(a, b, { loop = false, hasReverse = false, lineCount
     const end = onCircle(b, control, 1);
     return {
       d: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`,
-      label: { x: mid.x + nx * (bend + 14 + (lineCount - 1) * 6), y: mid.y + ny * (bend + 14 + (lineCount - 1) * 6) },
+      label: { x: mid.x + nx * (bend + 21 + (lineCount - 1) * 6), y: mid.y + ny * (bend + 21 + (lineCount - 1) * 6) },
       angle: Math.atan2(end.y - control.y, end.x - control.x),
     };
   }
