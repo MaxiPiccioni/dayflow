@@ -18,6 +18,26 @@ export function VectorSpaceExplain({ fn, A: Am }) {
   const info = sysInfo(A, homog);
   const dimNull = k - r;
 
+  if (fn === "imagen") {
+    const AT = A[0].map((_, j) => A.map((row) => row[j])), gT = gaussSteps(AT, {});
+    const base = gT.final.filter((row) => row.some((x) => Math.abs(x) > 1e-9));
+    return (
+      <>
+        <MatCard title="Imagen = espacio de columnas de A">
+          <MatrixTable d={A} />
+          <p className="mt-1 text-[12.5px]">La imagen de T(x) = A·x está generada por las columnas de A. Para hallar una base se reduce la transpuesta Aᵀ: sus filas no nulas son una base del espacio de columnas de A.</p>
+          <p className={`mt-1 ${hint}`}>El espacio de columnas de A es el espacio de filas de Aᵀ.</p>
+        </MatCard>
+        <MatCard title="Gauss-Jordan sobre Aᵀ"><Steps g={gT} /></MatCard>
+        <MatCard title="Base de la imagen">
+          {base.length ? base.map((v, i) => <div key={i} className="font-mono text-[12.5px]">w{sub(i + 1)} = {vecText(v)}</div>) : <div className="text-[12.5px]">A = 0: la imagen es {"{0}"}.</div>}
+          <p className="mt-1 font-mono text-[12.5px]">rango(T) = {base.length}; nulidad(T) = {k} − {base.length} = {k - base.length}</p>
+          <p className={`mt-1 ${hint}`}>Teorema de la dimensión: rango(T) + nulidad(T) = n, con n = {k} columnas de A.</p>
+        </MatCard>
+      </>
+    );
+  }
+
   if (fn === "dimension") {
     return (
       <>

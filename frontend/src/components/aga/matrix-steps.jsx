@@ -67,8 +67,8 @@ export function MatrixExplain({ obj, objs }) {
     );
   }
   if ((m = cmd.match(/^(Clasificar|Sistema|Rouche|Resolver|Solve|Solucion|Particular|Cramer|Nucleo|Kernel|Balancear|Balance)\((\w+)(?:,(\w+))?\)$/i)) && mat(m[2]) && (!m[3] || mat(m[3]))) return <SystemExplain fn={m[1].toLowerCase()} A={mat(m[2])} B={m[3] ? mat(m[3]) : null} names={[m[2], m[3]]} />;
-  if ((m = cmd.match(/^(Genera|Generan|Span|Indep|Independencia|Independientes|LI|Base|Basis|Dimension|Dim|Caracterizar|Caracteriza)\((\w+)\)$/i)) && mat(m[2]) && !obj.err) {
-    const f = m[1].toLowerCase(), fn = { generan: "genera", span: "genera", independencia: "indep", independientes: "indep", li: "indep", basis: "base", dim: "dimension", caracteriza: "caracterizar" }[f] || f;
+  if ((m = cmd.match(/^(Genera|Generan|Span|Indep|Independencia|Independientes|LI|Base|Basis|Dimension|Dim|Nulidad|Imagen|Image|Recorrido|Caracterizar|Caracteriza)\((\w+)\)$/i)) && mat(m[2]) && !obj.err) {
+    const f = m[1].toLowerCase(), fn = { generan: "genera", span: "genera", independencia: "indep", independientes: "indep", li: "indep", basis: "base", dim: "dimension", nulidad: "dimension", image: "imagen", recorrido: "imagen", caracteriza: "caracterizar" }[f] || f;
     return <VectorSpaceExplain fn={fn} A={mat(m[2])} />;
   }
   if ((m = cmd.match(/^(\w+)\*(\w+)$/)) && mat(m[1]) && mat(m[2]) && !obj.err) return <MatCard title="Producto elemento por elemento"><Product A={mat(m[1])} B={mat(m[2])} /></MatCard>;
