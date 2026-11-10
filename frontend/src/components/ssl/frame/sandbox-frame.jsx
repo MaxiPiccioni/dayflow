@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ExerciseDesk } from "@/components/ssl/frame/exercise-desk";
 import { ExerciseBar } from "@/components/ssl/frame/exercise-bar";
 import { PartsView } from "@/components/ssl/frame/parts-view";
 import { SessionCanvas } from "@/components/ssl/frame/session-canvas";
@@ -12,15 +13,18 @@ import { MathText } from "@/components/ssl/math-text";
 import { StepReveal } from "@/components/ssl/step-reveal";
 import { TransitionTable } from "@/components/ssl/transition-table";
 import { ToolPanel } from "@/components/ssl/tools/tool-panel";
+import { ToolsView } from "@/components/ssl/frame/tools-view";
 import { GENERIC_TOOLS, OWN_TOOL_ICON, TOOL_DEFAULTS, TOOL_LABEL } from "@/components/ssl/frame/tools";
 import { buildItems, hintOf, partsOf } from "@/lib/ssl/items";
 
 const TAB_LABEL = {
   ejecucion: "Ejecución", resultado: "Resultado", tabla: "Tabla", definicion: "Definición", transiciones: "Transiciones", alfabetos: "Alfabetos",
-  guardados: "Guardados", herramienta: "Herramienta", respuestas: "Respuestas", apartados: "Apartados", complejidad: "Complejidad", pasos: "Pasos", solucion: "Solución", pista: "Pista",
+  guardados: "Guardados", herramienta: "Herramienta", respuestas: "Respuestas", apartados: "Apartados", calculadoras: "Calculadoras", complejidad: "Complejidad", pasos: "Pasos", solucion: "Solución", pista: "Pista",
 };
 
 function tabsFor({ item, machine, tool, hasAnswers, multiple, complexity }) {
+  // Sin autómata: las respuestas están en el centro y el panel trae las calculadoras y las ayudas.
+  if (!machine) return item.kind === "exercise" ? ["calculadoras", "solucion", "pista"] : ["calculadoras"];
   const tabs = [];
   // Con varios apartados (o con campos de respuesta) la pestaña de apartados va primera: es donde se contesta.
   if (hasAnswers && (multiple || !machine)) tabs.push(multiple ? "apartados" : "respuestas");
@@ -36,8 +40,9 @@ function tabsFor({ item, machine, tool, hasAnswers, multiple, complexity }) {
   return tabs;
 }
 
-function PanelContent({ id, item, parts, partIndex, onPart, tool, hint, answers, onAnswer }) {
+function PanelContent({ id, item, parts, partIndex, onPart, tool, hint, answers, onAnswer, toolsView }) {
   if (id === "pasos") return <div className="space-y-3"><MathText text={item.example.context ?? item.section.context} className="block text-sm leading-relaxed text-zinc-600 dark:text-zinc-300" /><StepReveal steps={item.example.steps} />{item.example.tables && <div className="flex flex-wrap gap-3">{item.example.tables.map((table) => <TransitionTable key={table.name} table={table} />)}</div>}</div>;
+  if (id === "calculadoras") return <ToolsView {...toolsView} />;
   if (id === "herramienta") return tool ? <ToolPanel tool={tool} defaultOpen /> : null;
   if (id === "respuestas" || id === "apartados") return <PartsView exercise={item.exercise} parts={parts} activeIndex={partIndex} answers={answers} onAnswer={onAnswer} onPart={onPart} />;
   if (id === "solucion") {
@@ -89,22 +94,19 @@ function Workspace({ items, index, item, parts, partIndex, store, onGo, onPart, 
   const current = tabs.includes(tab) ? tab : tabs[0];
   const openTab = (id) => { setTab(id); setPanelOpen(true); };
   const answersTab = tabs.find((id) => id === "apartados" || id === "respuestas");
+  const plain = !machine;
+  // Elegir un apartado con herramienta propia abre las calculadoras con esa herramienta.
+  const pickPart = (i) => { onPart(i); if (plain) openTab("calculadoras"); };
   const canCheck = !!machine?.spec || hasAnswers;
   const onCheck = () => openTab(machine?.spec ? "resultado" : hasAnswers && answersTab ? answersTab : current);
 
   const body = (
     <>
-      <ExerciseBar items={items} index={index} item={item} progress={progress} onGo={onGo} onSetDone={setDone} partIndex={partIndex} canCheck={canCheck} onCheck={onCheck} />
+      <ExerciseBar items={items} index={index} item={item} progress={progress} onGo={onGo} onSetDone={setDone} partIndex={partIndex} canCheck={canCheck} onCheck={onCheck} compact={plain} />
       <div className="relative flex min-h-0 flex-1 max-md:flex-col md:flex-row">
-        <SessionToolbar tools={tools} activeTool={activeTool} onTool={(id) => setActiveTool(id === activeTool ? null : id)} hasHint={!!hint} hintActive={panelOpen && current === "pista"} onHint={() => openTab(tabs.includes("pista") ? "pista" : current)} onOpenTab={openTab} />
+        {machine && <SessionToolbar hasHint={!!hint} hintActive={panelOpen && current === "pista"} onHint={() => openTab(tabs.includes("pista") ? "pista" : current)} onOpenTab={openTab} />}
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {machine ? <SessionCanvas /> : (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 md:p-4">
-              {toolConfig ? <ToolPanel key={`${partKey}.${toolConfig.type}`} tool={toolConfig} defaultOpen /> : null}
-              {!toolConfig && hasAnswers && <p className="text-sm text-zinc-500">Escribí tus respuestas en el panel de la derecha{panelOpen ? "" : " (botón “Panel”)"}. En la barra de la izquierda tenés las herramientas.</p>}
-              {!toolConfig && !hasAnswers && <p className="text-sm text-zinc-500">Este ejercicio se resuelve en papel: leé el enunciado y comparalo con la solución del panel. En la barra de la izquierda tenés las herramientas.</p>}
-            </div>
-          )}
+          {machine ? <SessionCanvas /> : <ExerciseDesk item={item} parts={parts} partIndex={partIndex} answers={progress.answers} onAnswer={setAnswer} onPart={pickPart} />}
           <button
             type="button"
             onClick={() => setPanelOpen(!panelOpen)}
@@ -119,7 +121,7 @@ function Workspace({ items, index, item, parts, partIndex, store, onGo, onPart, 
           <aside
             id="sandbox-panel"
             aria-label="Panel del ejercicio"
-            className="z-40 flex min-h-0 flex-col border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:h-[52vh] max-md:rounded-t-2xl max-md:border-t md:w-[380px] md:shrink-0 md:border-l md:shadow-none"
+            className={`z-40 flex min-h-0 flex-col border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:h-[52vh] max-md:rounded-t-2xl max-md:border-t ${plain ? "md:w-[440px]" : "md:w-[380px]"} md:shrink-0 md:border-l md:shadow-none`}
           >
             <div role="tablist" aria-label="Secciones del panel" className="scrollbar-thin flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-200 p-1.5 dark:border-zinc-800">
               {tabs.map((id) => (
@@ -128,7 +130,7 @@ function Workspace({ items, index, item, parts, partIndex, store, onGo, onPart, 
               <button type="button" onClick={() => setPanelOpen(false)} aria-label="Cerrar el panel" className="ml-auto shrink-0 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 md:hidden">Cerrar</button>
             </div>
             <div role="tabpanel" id={`tabpanel-${current}`} aria-labelledby={`tab-${current}`} tabIndex={0} className="min-h-0 flex-1 overflow-y-auto p-3">
-              <PanelContent id={current} item={item} parts={parts} partIndex={partIndex} onPart={onPart} tool={tool} hint={hint} answers={progress.answers} onAnswer={setAnswer} />
+              <PanelContent id={current} item={item} parts={parts} partIndex={partIndex} onPart={pickPart} tool={tool} hint={hint} answers={progress.answers} onAnswer={setAnswer} toolsView={{ tools, active: activeTool, onPick: setActiveTool, config: toolConfig, resetKey: partKey }} />
             </div>
           </aside>
         )}

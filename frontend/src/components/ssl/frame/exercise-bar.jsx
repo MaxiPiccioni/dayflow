@@ -12,7 +12,7 @@ const primary = "flex shrink-0 items-center gap-1 rounded-xl border border-zinc-
 
 // Rectángulo del ejercicio: enunciado, partes (a, b, c…), aclaraciones y, a la derecha, Comprobar, Anterior, Siguiente,
 // el índice y la marca de hecho.
-export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, partIndex, canCheck, onCheck }) {
+export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, partIndex, canCheck, onCheck, compact = false }) {
   const session = useSession();
   const { kind } = item;
   const exercise = item.exercise;
@@ -30,10 +30,10 @@ export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, par
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="max-h-[20vh] min-w-0 flex-1 basis-80 md:max-h-[26vh] overflow-y-auto pr-1 text-sm leading-relaxed">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-lime-700 dark:text-lime-400">{heading}{kind === "exercise" && exercise.page ? <span className="ml-2 font-normal normal-case tracking-normal text-zinc-400">guía pág. {exercise.page}</span> : null}</p>
-          <MathText text={statement} className="mt-0.5 block" />
-          {kind === "exercise" && exercise.tables && <div className="mt-2 flex flex-wrap gap-3">{exercise.tables.map((table) => <TransitionTable key={table.name} table={table} />)}</div>}
-          {parts.length <= 1 && part?.prompt && <p className="mt-2 font-medium">{part.id && <span className="mr-1 font-semibold text-lime-700 dark:text-lime-400">{part.id})</span>}<MathText text={part.prompt} className="font-mono" /></p>}
-          {notes.length > 0 && (
+          {!compact && <MathText text={statement || part?.prompt || ""} className="mt-0.5 block text-base font-bold leading-snug" />}
+          {!compact && kind === "exercise" && exercise.tables && <div className="mt-2 flex flex-wrap gap-3">{exercise.tables.map((table) => <TransitionTable key={table.name} table={table} />)}</div>}
+          {!compact && statement && parts.length <= 1 && part?.prompt && <p className="mt-2 font-medium">{part.id && <span className="mr-1 font-semibold text-lime-700 dark:text-lime-400">{part.id})</span>}<MathText text={part.prompt} className="font-mono" /></p>}
+          {!compact && notes.length > 0 && (
             <details className="mt-1 text-xs text-amber-800 dark:text-amber-300">
               <summary className="cursor-pointer font-medium">Aclaraciones ({notes.length})</summary>
               <ul className="mt-1 list-disc space-y-1 pl-5">{notes.map((note) => <li key={note}>{note}</li>)}</ul>
@@ -41,7 +41,7 @@ export function ExerciseBar({ items, index, item, progress, onGo, onSetDone, par
           )}
         </div>
         <div className="scrollbar-thin flex items-center gap-2 max-sm:w-full max-sm:overflow-x-auto max-sm:pb-1 sm:flex-wrap">
-          <button type="button" onClick={check} disabled={!canCheck} title={canCheck ? "Comprobar" : "Este ejercicio no tiene comprobación automática"} className={primary}><Check size={15} aria-hidden="true" /> Comprobar</button>
+          {!compact && <button type="button" onClick={check} disabled={!canCheck} title={canCheck ? "Comprobar" : "Este ejercicio no tiene comprobación automática"} className={primary}><Check size={15} aria-hidden="true" /> Comprobar</button>}
           <button type="button" onClick={() => onGo(index - 1)} disabled={index === 0} className={nav} aria-label="Ejercicio anterior"><ChevronLeft size={15} aria-hidden="true" /><span className="max-sm:sr-only">Anterior</span></button>
           <button type="button" onClick={() => onGo(index + 1)} disabled={index === items.length - 1} className={nav} aria-label="Siguiente ejercicio"><span className="max-sm:sr-only">Siguiente</span><ChevronRight size={15} aria-hidden="true" /></button>
           <Select value={String(index)} onValueChange={(v) => onGo(Number(v))}>

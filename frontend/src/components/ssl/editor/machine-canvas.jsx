@@ -7,7 +7,7 @@ const stateLabelSize = (id) => (id.length > 7 ? 9 : id.length > 4 ? 11 : 14);
 // Lienzo SVG del editor. Modos: "select" (mover y elegir), "state" (agregar estado con un clic),
 // "link" (unir: clic en el origen y clic en el destino; el mismo estado hace un bucle) y "delete".
 // Cada estado es un botón enfocable: Enter lo elige, las flechas lo mueven y Supr lo borra.
-export function MachineCanvas({ machine, mode, selection, highlight, readOnly, onLiveChange, onCommitDrag, onChange, onSelect, onDelete, onRequestTransition, linkFrom, onLinkFrom, onStateTap, onStateDoubleTap, fill = false }) {
+export function MachineCanvas({ machine, mode, selection, highlight, readOnly, onLiveChange, onCommitDrag, onChange, onSelect, onDelete, onRequestTransition, linkFrom, onLinkFrom, onStateTap, onStateDoubleTap, movable = false, fill = false }) {
   const svgRef = useRef(null);
   const drag = useRef(null);
   const lastTap = useRef(null);
@@ -38,10 +38,11 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
   };
 
   const statePointerDown = (event, s) => {
-    if (readOnly) return;
+    if (readOnly && !movable) return;
     event.stopPropagation();
-    if (mode === "delete") { onDelete({ state: s.id }); return; }
-    if (mode === "link") {
+    // Solo lectura con "movable" (los ejemplos resueltos): se pueden mover los estados, nada más.
+    if (!readOnly && mode === "delete") { onDelete({ state: s.id }); return; }
+    if (!readOnly && mode === "link") {
       if (linkFrom === null) onLinkFrom(s.id);
       else { onRequestTransition(linkFrom, s.id); onLinkFrom(null); }
       onSelect({ state: s.id });
@@ -67,7 +68,7 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
     drag.current = null;
     if (d?.moved) { onCommitDrag(d.start); lastTap.current = null; return; }
     // Un toque sin arrastrar: simple abre las opciones del estado, doble (dos toques seguidos) abre el bucle.
-    if (d && mode === "select") {
+    if (d && mode === "select" && !readOnly) {
       const now = event.timeStamp;
       if (lastTap.current && lastTap.current.id === d.id && now - lastTap.current.time < 400) { lastTap.current = null; onStateDoubleTap?.(d.id); }
       else { lastTap.current = { id: d.id, time: now }; onStateTap?.(d.id); }
@@ -75,7 +76,7 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
   };
 
   const stateKeyDown = (event, s) => {
-    if (readOnly) return;
+    if (readOnly && !movable) return;
     const step = event.shiftKey ? 30 : 10;
     const move = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
     if (move) {
@@ -83,6 +84,8 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
       const q = clampPoint(s.x + move[0], s.y + move[1]);
       onLiveChange(s.id, q.x, q.y);
       onCommitDrag(machine);
+    } else if (readOnly) {
+      // Sin edición: solo las flechas mueven el estado.
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (mode === "link") {
@@ -166,7 +169,7 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
               aria-label={describe(s)}
               aria-pressed={selected}
               transform={`translate(${s.x} ${s.y})`}
-              style={{ cursor: readOnly ? "default" : mode === "select" ? "grab" : "pointer", outline: "none" }}
+              style={{ cursor: readOnly ? (movable ? "grab" : "default") : mode === "select" ? "grab" : "pointer", outline: "none" }}
               onPointerDown={(event) => statePointerDown(event, s)}
               onKeyDown={(event) => stateKeyDown(event, s)}
               onFocus={() => setHover(s.id)}
