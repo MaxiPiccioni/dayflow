@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { AlgebraRow } from "@/components/aga/algebra-row";
-import { HtmlText } from "@/components/aga/html-text";
 import { useDarkMode } from "@/components/aga/use-dark-mode";
-import { PALETTE, exerciseTitle, plotted } from "@/lib/aga/scene";
+import { PALETTE, plotted } from "@/lib/aga/scene";
 
 const SYNTAX = `u = (2, 3)        vector (minúscula)
 A = (1, 2)        punto (mayúscula)
@@ -19,9 +18,9 @@ Suma(v)  Comp(v,i)  Rango(u,v,…)
 CL(v, a1, a2…)    ¿v es comb. lineal?
 Dependencia(u,v)  ¿LI o LD?`;
 
-// Panel izquierdo: el enunciado con sus incisos, la vista algebraica (una fila por orden) y la entrada de órdenes.
-export function ExercisePanel({ session }) {
-  const { ex, item, itemIndex, objs, scene, sel, editing, mat } = session;
+// Vista algebraica (una fila por orden) y entrada de órdenes.
+export function AlgebraView({ session }) {
+  const { item, objs, scene, sel, editing, mat } = session;
   const dark = useDarkMode();
   const [error, setError] = useState("");
   const colors = new Map(plotted(objs, scene, dark ? PALETTE.dark : PALETTE.light).map(({ o, color }) => [o.name, color]));
@@ -36,26 +35,13 @@ export function ExercisePanel({ session }) {
   };
 
   return (
-    <>
-      <div className="flex flex-col gap-1.5 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
-        <div className="text-[11.5px] text-zinc-500">{ex.kind === "ej" ? "Ejemplo del apunte" : "Ejercicio para resolver"} · <span className="rounded-full border border-zinc-200 px-2 font-mono text-[10.5px] dark:border-zinc-700">{ex.tag}</span></div>
-        <h2 className="text-sm font-bold [text-wrap:balance]">{exerciseTitle(ex)} — {ex.title}</h2>
-        <p className="text-[12.5px]"><HtmlText html={ex.text} /></p>
-        {ex.items.length > 1 && (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Incisos">
-            {ex.items.map((it, i) => (
-              <button key={i} type="button" aria-pressed={i === itemIndex} onClick={() => { setError(""); session.openItem(i); }} className={`rounded-md border px-2.5 py-0.5 font-mono text-xs ${i === itemIndex ? "border-zinc-900 bg-zinc-900 text-white dark:border-lime-400 dark:bg-lime-400 dark:text-zinc-950" : "border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"}`}>{it.l || String(i + 1)}</button>
-            ))}
-          </div>
-        )}
-      </div>
-
+    <div className="flex shrink-0 flex-col">
       <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2 text-xs font-semibold dark:border-zinc-800">
         Vista algebraica
         <span className="flex-1" />
         <button type="button" onClick={() => { setError(""); session.reset(); }} title="Volver al estado inicial del ejercicio" className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:border-lime-500 dark:border-zinc-700">Restablecer</button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto" aria-label="Objetos del ejercicio">
+      <div className="max-h-56 min-h-12 overflow-auto" aria-label="Objetos del ejercicio">
         {objs.length === 0 && <p className="px-3 py-2 text-[11px] text-zinc-500">Sin objetos. Escribí una orden abajo, por ejemplo: u = (2, 3)</p>}
         {objs.map((o) => (
           <AlgebraRow
@@ -92,6 +78,6 @@ export function ExercisePanel({ session }) {
           <pre className="mt-1.5 whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-zinc-500">{SYNTAX}</pre>
         </details>
       </div>
-    </>
+    </div>
   );
 }

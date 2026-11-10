@@ -279,7 +279,7 @@ function gaussSteps(d, opts){
     }
     piv.push(col); r++;
   }
-  return { steps, final: snap(), piv, split: opts.aug ? c0 : -1, cc: !!opts.cc, ncol, c0 };
+  return { steps, final: snap(), piv, split: opts.aug ? c0 : (opts.split || -1), cc: !!opts.cc, ncol, c0 };
 }
 function rrefM(d){ const g = gaussSteps(d); return g.final; }
 function rankM(d){ return gaussSteps(d).piv.length; }
@@ -363,6 +363,82 @@ Object.assign(FN, {
     return { t: 's', v: ok ? 'Son iguales' : 'No son iguales' };
   },
 });
+/* menores, cofactores y adjunta (Unidad 3) */
+const minorOf = (d, i, j) => d.filter((_, r) => r !== i).map(r => r.filter((_, c) => c !== j));
+const detRaw = d => (d.length === 1 ? d[0][0] : detOf(mk(d)));
+const cofactorOf = (d, i, j) => clean(((i + j) % 2 ? -1 : 1) * detRaw(minorOf(d, i, j)));
+const cofMat = d => d.map((r, i) => r.map((_, j) => cofactorOf(d, i, j)));
+const adjMat = d => mT(mk(cofMat(d))).d;
+const cell = (a, i, j) => { const m = needM(a[0], 'El primer argumento'); needSquare(m, 'El cofactor'); const r = needNum(i, 'La fila'), c = needNum(j, 'La columna'); if (!Number.isInteger(r) || !Number.isInteger(c) || r < 1 || c < 1 || r > m.d.length || c > m.d.length) throw new Error('Posición fuera de la matriz'); return [m.d, r - 1, c - 1]; };
+Object.assign(FN, {
+  cofactores: a => { const m = needM(a[0], 'El argumento'); needSquare(m, 'La matriz de cofactores'); if (m.d.length < 2) throw new Error('Se necesita una matriz de orden 2 o mayor'); return mk(cofMat(m.d)); },
+  adjunta: a => { const m = needM(a[0], 'El argumento'); needSquare(m, 'La adjunta'); if (m.d.length < 2) throw new Error('Se necesita una matriz de orden 2 o mayor'); return mk(adjMat(m.d)); },
+  cofactor: a => cofactorOf(...cell(a, a[1], a[2])),
+  menor: a => { const [d, i, j] = cell(a, a[1], a[2]); return d.length === 1 ? 1 : detRaw(minorOf(d, i, j)); },
+});
+Object.assign(ALIAS, { adj: 'adjunta', adjoint: 'adjunta', cof: 'cofactores', cofactors: 'cofactores', minor: 'menor' });
+
+
+/* sistemas de ecuaciones lineales (Unidad 4): A·X = B, Rouché-Frobenius, Gauss-Jordan, Cramer */
+function sysParts(a, what){
+  const A = needM(a[0], 'La matriz de coeficientes');
+  let rows = A.d, b;
+  if (a.length < 2){
+    if (rows[0].length < 2) throw new Error(what + ': la matriz ampliada necesita al menos 2 columnas');
+    b = rows.map(r => r[r.length - 1]); rows = rows.map(r => r.slice(0, -1));
+  } else {
+    const B = a[1];
+    if (isM(B) && B.d[0].length === 1) b = B.d.map(r => r[0]);
+    else if (isV(B)) b = B.c.slice();
+    else throw new Error('Los términos independientes deben ser una columna: [b1; b2; …]');
+    if (b.length !== rows.length) throw new Error('Hay ' + rows.length + ' ecuaciones y ' + b.length + ' términos independientes');
+  }
+  return { A: rows, b };
+}
+function sysInfo(A, b){
+  const n = A[0].length, g = gaussSteps(A.map((r, i) => r.concat([b[i]])), { split: n });
+  const rA = g.piv.filter(c => c < n).length, rAb = g.piv.length;
+  const kind = rAb > rA ? 'incompatible' : rA === n ? 'determinado' : 'indeterminado';
+  const free = []; for (let c = 0; c < n; c++) if (!g.piv.includes(c)) free.push(c);
+  const part = Array(n).fill(0); g.piv.forEach((c, i) => { if (c < n) part[c] = g.final[i][n]; });
+  const basis = free.map(f => { const v = Array(n).fill(0); v[f] = 1; g.piv.forEach((c, i) => { if (c < n) v[c] = clean(-g.final[i][f]); }); return v; });
+  return { g, n, m: A.length, rA, rAb, kind, free, part: part.map(clean), basis };
+}
+const col = v => mk(v.map(x => [x]));
+const KIND = { determinado: 'Compatible determinado', indeterminado: 'Compatible indeterminado', incompatible: 'Incompatible' };
+function paramText(info){
+  const nm = i => 'x' + (i + 1), ts = info.free.map((_, i) => info.free.length > 1 ? 't' + (i + 1) : 't');
+  return '(' + info.part.map(x => fmtNum(x)).join(', ') + ') + ' + info.basis.map((v, i) => ts[i] + '·(' + v.map(x => fmtNum(x)).join(', ') + ')').join(' + ');
+}
+function intVec(v){
+  let best = null;
+  for (let q = 1; q <= 5000 && !best; q++) if (v.every(x => Math.abs(x*q - Math.round(x*q)) < 1e-7)) best = q;
+  if (!best) throw new Error('No se pudo escalar a enteros');
+  let w = v.map(x => Math.round(x*best)), g = w.reduce((p, x) => gcd(p, Math.abs(x)), 0) || 1;
+  w = w.map(x => x / g); if (w.find(x => x !== 0) < 0) w = w.map(x => -x); return w;
+}
+Object.assign(FN, {
+  clasificar: a => { const { A, b } = sysParts(a, 'Clasificar'); return { t: 's', v: KIND[sysInfo(A, b).kind] }; },
+  resolver: a => {
+    const { A, b } = sysParts(a, 'Resolver'), info = sysInfo(A, b);
+    if (info.kind === 'incompatible') return { t: 's', v: 'Incompatible: rango(A) = ' + info.rA + ' < rango(A|B) = ' + info.rAb };
+    if (info.kind === 'determinado') return col(info.part);
+    return { t: 's', v: 'Indeterminado (' + (info.n - info.rA) + (info.n - info.rA === 1 ? ' parámetro' : ' parámetros') + '): X = ' + paramText(info) };
+  },
+  particular: a => { const { A, b } = sysParts(a, 'Particular'), info = sysInfo(A, b); if (info.kind === 'incompatible') throw new Error('El sistema es incompatible: no tiene solución'); return col(info.part); },
+  nucleo: a => {
+    const A = needM(a[0], 'El argumento'), info = sysInfo(A.d, Array(A.d.length).fill(0));
+    return info.basis.length ? mk(info.n ? Array.from({ length: info.n }, (_, i) => info.basis.map(v => v[i])) : []) : col(Array(info.n).fill(0));
+  },
+  cramer: a => {
+    const { A, b } = sysParts(a, 'Cramer'); if (A.length !== A[0].length) throw new Error('Cramer necesita un sistema cuadrado');
+    const D = detOf(mk(A)); if (Math.abs(D) < 1e-12) throw new Error('|A| = 0: no se puede aplicar Cramer');
+    return col(A.map((_, j) => detOf(mk(A.map((r, i) => r.map((x, k) => (k === j ? b[i] : x))))) / D).map(clean));
+  },
+  balancear: a => { const A = needM(a[0], 'El argumento'), info = sysInfo(A.d, Array(A.d.length).fill(0)); if (info.basis.length !== 1) throw new Error('La ecuación no tiene una única solución mínima (' + info.basis.length + ' parámetros)'); return col(intVec(info.basis[0])); },
+});
+Object.assign(ALIAS, { sistema: 'clasificar', rouche: 'clasificar', solve: 'resolver', solucion: 'resolver', null: 'nucleo', kernel: 'nucleo', balance: 'balancear' });
+
 /* comparación con respuestas esperadas (compartida por la app y las pruebas) */
 function cmpExpect(got, exp, err){
   if (exp === 'ERR') return !!err;
@@ -382,4 +458,4 @@ function expShown(exp, dec){
   return exp;
 }
 
-export { ALIAS, FN, TOL, add, cartesian, clOf, clean, cmpExpect, coords, detOf, dimS, div, evalExpr, evalScene, expShown, fmtNum, fmtVal, fnKey, gaussSteps, gcd, idn, isExact, isM, isN, isV, mAdd, mInv, mMul, mPow, mT, matP, mk, mul, needM, needNum, needSquare, needV, neg, normOf, plottable, rankM, rankOf, reducidaInfo, rref, rrefM, same, sqrtForm, sub, tipoInfo, tokenize };
+export { sysInfo, sysParts, paramText, KIND, minorOf, cofactorOf, cofMat, adjMat, ALIAS, FN, TOL, add, cartesian, clOf, clean, cmpExpect, coords, detOf, dimS, div, evalExpr, evalScene, expShown, fmtNum, fmtVal, fnKey, gaussSteps, gcd, idn, isExact, isM, isN, isV, mAdd, mInv, mMul, mPow, mT, matP, mk, mul, needM, needNum, needSquare, needV, neg, normOf, plottable, rankM, rankOf, reducidaInfo, rref, rrefM, same, sqrtForm, sub, tipoInfo, tokenize };

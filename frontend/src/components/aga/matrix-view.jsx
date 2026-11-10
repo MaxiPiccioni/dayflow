@@ -32,7 +32,7 @@ export function MatrixView({ obj, objs, dec }) {
         </>
       )}
       {f && <MatCard title="Valor"><p className="font-mono text-lg font-medium">{f.main}{f.approx && <span className="ml-2 text-[11px] text-zinc-500">{f.approx}</span>}</p></MatCard>}
-      {!obj.err && <MatrixExplain obj={obj} objs={objs} />}
+      <MatrixExplain obj={obj} objs={objs} />
     </div>
   );
 }

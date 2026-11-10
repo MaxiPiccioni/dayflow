@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { ExercisePanel } from "@/components/aga/exercise-panel";
+import { AlgebraView } from "@/components/aga/algebra-view";
+import { ExerciseHeader } from "@/components/aga/exercise-header";
 import { MatrixView } from "@/components/aga/matrix-view";
 import { PlaneView } from "@/components/aga/plane-view";
 import { ResolutionPanel } from "@/components/aga/resolution-panel";
@@ -15,10 +16,10 @@ import { exerciseTitle } from "@/lib/aga/scene";
 
 const panel = "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900";
 const arrow = "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 hover:border-lime-500 disabled:opacity-40 dark:border-zinc-700";
-const PANES = [["left", "Ejercicio"], ["center", null], ["right", "Resolución"]];
+const PANES = [["center", "Ejercicio"], ["right", "Resolución"]];
 
-// Una unidad del sandbox: tres columnas (ejercicio y vista algebraica · gráfico o pasos · resolución y propiedades) que en
-// pantallas angostas pasan a verse de a una.
+// Una unidad del sandbox: el ejercicio, la vista algebraica y el gráfico (o los pasos) en el centro, y la resolución y las
+// propiedades a la derecha; en pantallas angostas se ven de a una.
 function UnitSandbox({ unit, subjectId, router }) {
   const session = useAgaSession(unit.n);
   const { ex, list, exIndex, mat, sel, objs, item } = session;
@@ -49,16 +50,21 @@ function UnitSandbox({ unit, subjectId, router }) {
   return (
     <SandboxPopup title="Sandbox · Álgebra y Geometría" onClose={() => router.push(`/facultad/${subjectId}`)} headerExtra={<>{unitSelect}{picker}</>}>
       {session.saveFailed && <p role="status" className="shrink-0 bg-amber-50 px-3 py-1.5 text-sm text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">Este navegador no deja guardar el progreso: todo funciona, pero se pierde al recargar.</p>}
-      <div className="grid min-h-0 flex-1 gap-2.5 p-2.5 lg:grid-cols-[minmax(250px,320px)_minmax(0,1fr)_minmax(250px,310px)]">
-        <section aria-label="Ejercicio y vista algebraica" className={`${panel} ${show("left")}`}><ExercisePanel session={session} /></section>
-        <section aria-label={mat ? "Pasos y propiedades" : "Vista gráfica"} className={`${panel} ${show("center")}`}>
-          {mat ? <MatrixView obj={selectedObj} objs={objs} dec={!!item.dec} /> : <PlaneView session={session} />}
+      <div className="grid min-h-0 flex-1 gap-2.5 p-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(250px,310px)]">
+        <section aria-label="Ejercicio" className={`${panel} ${show("center")}`}>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ExerciseHeader session={session} />
+            <AlgebraView session={session} />
+            <div className={`flex flex-col border-t border-zinc-200 dark:border-zinc-800 ${mat ? "" : "h-[55vh] min-h-80"}`}>
+              {mat ? <MatrixView obj={selectedObj} objs={objs} dec={!!item.dec} /> : <PlaneView session={session} />}
+            </div>
+          </div>
         </section>
         <section aria-label="Resolución y propiedades" className={`${panel} ${show("right")}`}><ResolutionPanel session={session} /></section>
       </div>
-      <nav aria-label="Paneles" className="grid shrink-0 grid-cols-3 gap-1.5 px-2.5 pb-2.5 lg:hidden">
+      <nav aria-label="Paneles" className="grid shrink-0 grid-cols-2 gap-1.5 px-2.5 pb-2.5 lg:hidden">
         {PANES.map(([id, text]) => (
-          <button key={id} type="button" aria-pressed={pane === id} onClick={() => setPane(id)} className={`rounded-xl border px-2 py-2 text-sm font-semibold ${pane === id ? "border-zinc-900 bg-zinc-900 text-white dark:border-lime-400 dark:bg-lime-400 dark:text-zinc-950" : "border-zinc-200 dark:border-zinc-700"}`}>{text ?? (mat ? "Pasos" : "Gráfico")}</button>
+          <button key={id} type="button" aria-pressed={pane === id} onClick={() => setPane(id)} className={`rounded-xl border px-2 py-2 text-sm font-semibold ${pane === id ? "border-zinc-900 bg-zinc-900 text-white dark:border-lime-400 dark:bg-lime-400 dark:text-zinc-950" : "border-zinc-200 dark:border-zinc-700"}`}>{text}</button>
         ))}
       </nav>
     </SandboxPopup>
