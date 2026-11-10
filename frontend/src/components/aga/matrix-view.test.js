@@ -31,4 +31,16 @@ describe("vista de matrices", () => {
     const html = renderToStaticMarkup(createElement(MatrixView, { obj: objs[1], objs, dec: false }));
     expect(html).toContain("no es inversible");
   });
+
+  it("un sistema muestra Rouché-Frobenius, Gauss-Jordan con CC y la solución", () => {
+    const objs = evalScene(["A=[1,2,-2;2,-5,4;-1,16,-14]", "B=[3;6;-3]", "X=Resolver(A,B)"]);
+    const html = renderToStaticMarkup(createElement(MatrixView, { obj: objs[2], objs, dec: false }));
+    for (const text of ["Rouché-Frobenius", "Gauss-Jordan paso a paso", "compatible indeterminado", "Incógnitas secundarias"]) expect(html).toContain(text);
+  });
+
+  it("Cramer muestra los determinantes sustitutos", () => {
+    const objs = evalScene(["A=[2,1;1,5]", "B=[3;6]", "X=Cramer(A,B)"]);
+    const html = renderToStaticMarkup(createElement(MatrixView, { obj: objs[2], objs, dec: false }));
+    expect(html).toContain("Método de Cramer");
+  });
 });
