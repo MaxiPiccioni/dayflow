@@ -2,6 +2,7 @@ import { EX1 } from "./unit1.js";
 import { EX2 } from "./unit2.js";
 import { EX3 } from "./unit3.js";
 import { EX4 } from "./unit4.js";
+import { EX6 } from "./unit6.js";
 import { EX5 } from "./unit5.js";
 
 // Unidades del sandbox de Álgebra y Geometría Analítica. `mat: true` muestra la vista de matrices en vez del plano.
@@ -11,7 +12,8 @@ export const UNITS = [
   { n: 3, title: "Unidad 3 · Determinantes", mat: true },
   { n: 4, title: "Unidad 4 · Sistemas de ecuaciones lineales", mat: true },
   { n: 5, title: "Unidad 5 · Espacios vectoriales", mat: true },
+  { n: 6, title: "Unidad 6 · Transformaciones lineales", mat: true },
 ];
 
-export const EX = [...EX1, ...EX2, ...EX3, ...EX4, ...EX5];
+export const EX = [...EX1, ...EX2, ...EX3, ...EX4, ...EX5, ...EX6];
 export const unitByNumber = (n) => UNITS.find((u) => u.n === n);
