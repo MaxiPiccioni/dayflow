@@ -1,6 +1,7 @@
 import { AdjointExplain, DeterminantExplain } from "@/components/aga/determinant-steps";
 import { MatCard, Steps, hint } from "@/components/aga/step-cards";
 import { SystemExplain } from "@/components/aga/system-steps";
+import { VectorSpaceExplain } from "@/components/aga/vspace-steps";
 import { clean, fmtNum, gaussSteps, isM } from "@/lib/aga/engine";
 
 export { MatCard };
@@ -66,6 +67,10 @@ export function MatrixExplain({ obj, objs }) {
     );
   }
   if ((m = cmd.match(/^(Clasificar|Sistema|Rouche|Resolver|Solve|Solucion|Particular|Cramer|Nucleo|Kernel|Balancear|Balance)\((\w+)(?:,(\w+))?\)$/i)) && mat(m[2]) && (!m[3] || mat(m[3]))) return <SystemExplain fn={m[1].toLowerCase()} A={mat(m[2])} B={m[3] ? mat(m[3]) : null} names={[m[2], m[3]]} />;
+  if ((m = cmd.match(/^(Genera|Generan|Span|Indep|Independencia|Independientes|LI|Base|Basis|Dimension|Dim|Caracterizar|Caracteriza)\((\w+)\)$/i)) && mat(m[2]) && !obj.err) {
+    const f = m[1].toLowerCase(), fn = { generan: "genera", span: "genera", independencia: "indep", independientes: "indep", li: "indep", basis: "base", dim: "dimension", caracteriza: "caracterizar" }[f] || f;
+    return <VectorSpaceExplain fn={fn} A={mat(m[2])} />;
+  }
   if ((m = cmd.match(/^(\w+)\*(\w+)$/)) && mat(m[1]) && mat(m[2]) && !obj.err) return <MatCard title="Producto elemento por elemento"><Product A={mat(m[1])} B={mat(m[2])} /></MatCard>;
   return null;
 }
