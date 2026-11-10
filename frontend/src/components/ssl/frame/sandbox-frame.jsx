@@ -98,7 +98,7 @@ function Workspace({ items, index, item, parts, partIndex, store, onGo, onPart, 
       <div className="relative flex min-h-0 flex-1 max-md:flex-col md:flex-row">
         <SessionToolbar tools={tools} activeTool={activeTool} onTool={(id) => setActiveTool(id === activeTool ? null : id)} hasHint={!!hint} hintActive={panelOpen && current === "pista"} onHint={() => openTab(tabs.includes("pista") ? "pista" : current)} onOpenTab={openTab} />
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {machine ? <SessionCanvas onOpenTab={openTab} /> : (
+          {machine ? <SessionCanvas /> : (
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 md:p-4">
               {toolConfig ? <ToolPanel key={`${partKey}.${toolConfig.type}`} tool={toolConfig} defaultOpen /> : null}
               {!toolConfig && hasAnswers && <p className="text-sm text-zinc-500">Escribí tus respuestas en el panel de la derecha{panelOpen ? "" : " (botón “Panel”)"}. En la barra de la izquierda tenés las herramientas.</p>}

@@ -72,7 +72,7 @@ function TransitionsView() {
   return (
     <div className="space-y-3">
       {state && machine.states.some((x) => x.id === state) && <StatePanel key={state} machine={machine} editor={editor} id={state} readOnly={s.readOnly} />}
-      {!s.readOnly && machine.states.length > 0 && <TransitionForm key={s.pending ? `${s.pending.from}>${s.pending.to}` : "form"} machine={machine} editor={editor} pending={s.pending} setPending={s.setPending} />}
+      {!s.readOnly && machine.states.length > 0 && <TransitionForm machine={machine} editor={editor} pending={null} setPending={() => {}} />}
       <div>
         <p className="mb-1 text-xs font-semibold text-zinc-500">Transiciones ({machine.transitions.length})</p>
         {machine.transitions.length

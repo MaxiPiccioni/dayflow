@@ -35,3 +35,19 @@ export function completeWithError(machine) {
   if (!added && m === machine) return { error: "El autómata ya está completo." };
   return { machine: m };
 }
+
+// "Convertir en estado de error" (solo AF): el estado deja de ser de aceptación y se queda en sí mismo con todos los símbolos
+// del alfabeto. Si ya sale hacia otro estado no se toca nada: primero hay que borrar esas flechas.
+export function makeErrorState(machine, id) {
+  if (!isFa(machine)) return { error: "El estado de error con bucles se usa en los autómatas finitos." };
+  if (!hasState(machine, id)) return { error: `No existe el estado ${id}.` };
+  if (machine.transitions.some((t) => t.from === id && t.to !== id)) return { error: `${id} tiene transiciones hacia otros estados: borralas antes de convertirlo en estado de error.` };
+  let m = { ...machine, accepting: machine.accepting.filter((a) => a !== id) };
+  for (const symbol of m.alphabet.filter((s) => s !== "")) {
+    if (m.transitions.some((t) => t.from === id && t.symbol === symbol)) continue;
+    const result = addTransition(m, { from: id, to: id, symbol });
+    if (result.error) return result;
+    m = result.machine;
+  }
+  return { machine: m };
+}
