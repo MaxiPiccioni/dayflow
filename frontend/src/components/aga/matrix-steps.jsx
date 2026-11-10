@@ -1,3 +1,4 @@
+import { AdjointExplain, DeterminantExplain } from "@/components/aga/determinant-steps";
 import { MatrixTable } from "@/components/aga/matrix-table";
 import { clean, fmtNum, gaussSteps, isM } from "@/lib/aga/engine";
 
@@ -80,13 +81,19 @@ export function MatrixExplain({ obj, objs }) {
     );
   }
   if (((m = cmd.match(/^(?:Inversa|Inv|Inverse)\((\w+)\)$/i)) || (m = cmd.match(/^(\w+)\^-1$/))) && mat(m[1])) {
+    const sq = mat(m[1]).d.length === mat(m[1]).d[0].length && mat(m[1]).d.length <= 5;
     return (
+      <>
       <MatCard title="Inversa por operaciones elementales">
         <p className={`mb-2 ${hint}`}>Se parte de [A | I | CC] y se reduce A. Lo que queda a la derecha de la barra es A⁻¹. CC se mantiene igual a la suma de cada fila si no hay errores de cuenta.</p>
         <Steps g={gaussSteps(mat(m[1]).d, { aug: true, cc: true })} kind="inv" name={m[1]} />
       </MatCard>
+      {sq && <AdjointExplain d={mat(m[1]).d} withInverse />}
+      </>
     );
   }
+  if ((m = cmd.match(/^Det\((\w+)\)$/i)) && mat(m[1]) && mat(m[1]).d.length === mat(m[1]).d[0].length) return <DeterminantExplain d={mat(m[1]).d} />;
+  if ((m = cmd.match(/^(?:Adjunta|Adj|Cofactores|Cof)\((\w+)\)$/i)) && mat(m[1]) && mat(m[1]).d.length === mat(m[1]).d[0].length) return <AdjointExplain d={mat(m[1]).d} />;
   if ((m = cmd.match(/^MatP\((\w+)\)$/i)) && mat(m[1])) {
     return (
       <MatCard title="Matriz P, paso a paso">
