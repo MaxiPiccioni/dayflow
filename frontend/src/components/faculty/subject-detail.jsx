@@ -11,6 +11,7 @@ import { StatusBadge, SubjectIcon } from "@/components/faculty/subject-card";
 import { StudySummary } from "@/components/faculty/study-summary";
 import { SubjectRequirements } from "@/components/faculty/subject-requirements";
 import { api } from "@/lib/api";
+import { isAgaSubject } from "@/lib/aga/subject";
 import { isSslSubject } from "@/lib/ssl/subject";
 import { allowsGrade, formatGrade, inputClass, levelLabel, planSummary, STATUS, STATUS_KEYS } from "@/lib/faculty";
 
@@ -83,7 +84,7 @@ export function SubjectDetail({ subject, subjects, onEdit, onChange, onNotesSave
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href="/facultad" className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-700"><ArrowLeft size={15} /> Volver</Link>
         <div className="flex flex-wrap items-center gap-2">
-          {isSslSubject(subject) && (
+          {(isSslSubject(subject) || isAgaSubject(subject)) && (
             <Link href={`/facultad/${subject.id}/sandbox`} className="flex items-center gap-1 rounded-xl bg-lime-200 px-3 py-2 text-sm font-semibold text-lime-950"><FlaskConical size={14} /> Sandbox</Link>
           )}
           <button type="button" onClick={onEdit} className="flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white dark:bg-lime-400 dark:text-zinc-950"><Pencil size={14} /> Editar materia</button>

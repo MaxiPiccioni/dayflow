@@ -2,8 +2,10 @@
 
 import { notFound, useParams } from "next/navigation";
 import { useRouteSubject } from "@/components/faculty/faculty-detail-page";
+import { AgaSandbox } from "@/components/aga/aga-sandbox";
 import { SslSandbox } from "@/components/ssl/ssl-sandbox";
 import { UNITS } from "@/lib/ssl/units";
+import { isAgaSubject } from "@/lib/aga/subject";
 import { isSslSubject } from "@/lib/ssl/subject";
 
 // Rutas "/facultad/[id]/sandbox" y "/facultad/[id]/sandbox/[unidad]": el sandbox de SSL de una materia.
@@ -11,6 +13,7 @@ export function FacultySandboxPage() {
   const { unidad } = useParams();
   const subject = useRouteSubject();
   if (!subject) return null;
+  if (isAgaSubject(subject)) return <AgaSandbox subjectId={subject.id} />;
   if (!isSslSubject(subject)) notFound();
   let unitNumber;
   if (unidad !== undefined) {

@@ -9,6 +9,7 @@
 - Carpetas de Drive creadas para las 37 curriculares.
 - Facultad conectada con Pomodoro y Tareas: `subject_id` opcional en ambos, `GET /api/faculty/study` y tarjeta "Estudio" en cada materia. Buscador de materias en el Pomodoro y en el formulario de tareas.
 - Sandbox de SSL (Sintaxis y Semántica de los Lenguajes), solo frontend en `lib/ssl` y `components/ssl`: Unidad 2 (ejercicios 1 a 29) y Unidades 3 a 6 con editor de autómatas (AFD, AFND, AP, ALA y MT), ejecución manual/automática y comprobación por lenguaje. Progreso y autómatas en localStorage. 246 tests de vitest.
+- Sandbox de Álgebra y Geometría Analítica: fuentes en `frontend/aga/` (build a `public/aga/index.html`, se abre en iframe desde `/facultad/[id]/sandbox`). Unidad 1 (vectores 2D, 8 ejemplos + 23 ejercicios) y Unidad 2 (matrices paso a paso, 14 ejemplos + 38 ejercicios), verificados contra el apunte (331 chequeos). Próximas: U3 en adelante; U11 y cuádricas quedan afuera.
 
 ## Pendiente (orden sugerido)
 1. Datos y correctitud (fase 3): hecha en la rama `fix/fase3-datos` (3-C dinero con Numeric, 3-D índices únicos y CI con Postgres, 3-E categorías por id, 3-F ahorros sin xfail). Falta aplicarla en producción (ver REPORTE_FASE3_DATOS.md: backup de Neon primero). Quedan 3.6 (tareas repetidas con series) y 3.7 (rollover fuera del GET).
