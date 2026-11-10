@@ -470,6 +470,17 @@ Object.assign(FN, {
     return { t: 's', v: leftNull(A).map(condText).join(' ; ') };
   },
 });
+Object.assign(FN, {
+  imagen: a => { // base del espacio de columnas: filas no nulas de la reducida de Aᵀ, escritas como columnas
+    const A = needM(a[0], 'El argumento').d, AT = A[0].map((_, j) => A.map(r => r[j])), R = rrefM(AT).filter(r => r.some(x => Math.abs(x) > 1e-9));
+    return R.length ? mk(A.length ? Array.from({ length: A.length }, (_, i) => R.map(v => clean(v[i]))) : []) : col(Array(A.length).fill(0));
+  },
+  rot: a => { // matriz de rotación antihoraria; el ángulo va en grados
+    const t = needNum(a[0], 'El ángulo') * Math.PI / 180, c = clean(Math.cos(t)), s = clean(Math.sin(t));
+    return mk([[c, clean(-s)], [s, c]]);
+  },
+});
+Object.assign(ALIAS, { nulidad: 'dimension', image: 'imagen', recorrido: 'imagen', rotacion: 'rot', giro: 'rot' });
 Object.assign(ALIAS, { generan: 'genera', span: 'genera', li: 'indep', independencia: 'indep', independientes: 'indep', basis: 'base', dim: 'dimension', caracteriza: 'caracterizar' });
 
 /* comparación con respuestas esperadas (compartida por la app y las pruebas) */

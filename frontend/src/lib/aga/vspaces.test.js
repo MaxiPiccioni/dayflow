@@ -25,3 +25,16 @@ describe("espacios vectoriales", () => {
     expect(r.vp).toBe("[22; 9]");
   });
 });
+
+describe("transformaciones lineales", () => {
+  it("Imagen devuelve una base del espacio de columnas", () => {
+    expect(run(["A=[1,-1,3;5,6,-4;7,4,2]", "I=Imagen(A)"]).I).toBe("[1, 0; 0, 1; 2, 1]");
+  });
+  it("rango + nulidad = número de columnas", () => {
+    const r = run(["A=[2,2,-1,0,1;-1,-1,2,-3,1;1,1,-2,0,-1;0,0,1,1,1]", "r=Rango(A)", "n=Nulidad(A)"]);
+    expect(+r.r + +r.n).toBe(5);
+  });
+  it("Rot construye la matriz de rotación en grados", () => {
+    expect(run(["R=Rot(90)"]).R).toBe("[0, -1; 1, 0]");
+  });
+});
