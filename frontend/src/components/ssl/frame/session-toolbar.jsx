@@ -67,7 +67,7 @@ function useFitColumns(ref, signature) {
 
 // Barra de comandos del sandbox: angosta y a la izquierda (en celular, una fila de íconos con scroll propio). Los dos últimos
 // botones son Play/Stop (hace funcionar la máquina y la frena) y Pistas.
-export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive, tools = [], activeTool = null, onTool }) {
+export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive }) {
   const s = useSession();
   const [flyout, setFlyout] = useState(null);
   const fileRef = useRef(null);
@@ -78,7 +78,7 @@ export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive, tools =
   const tape = s && isTape(s.machine);
 
   const barRef = useRef(null);
-  const cols = useFitColumns(barRef, `${canvas}-${ro}-${tools.length}-${s?.machine.type ?? ""}`);
+  const cols = useFitColumns(barRef, `${canvas}-${ro}-${s?.machine.type ?? ""}`);
 
   const act = (fn, tab) => () => { fn(); if (tab) onOpenTab(tab); };
   const toggleFlyout = (name) => setFlyout((current) => (current === name ? null : name));
@@ -147,8 +147,6 @@ export function SessionToolbar({ hasHint, onOpenTab, onHint, hintActive, tools =
             onClick={act(s.playing ? s.stop : s.togglePlay, "ejecucion")}
           />
         )}
-        {!canvas && tools.map((t) => <Tool key={t.id} icon={t.icon} label={t.label} pressed={activeTool === t.id} onClick={() => onTool(t.id)} />)}
-        {!canvas && tools.length > 0 && <Divider />}
         <Tool icon={Lightbulb} label="Pistas del ejercicio" pressed={hintActive} onClick={onHint} className={hasHint ? "" : "opacity-70"} />
       </div>
 

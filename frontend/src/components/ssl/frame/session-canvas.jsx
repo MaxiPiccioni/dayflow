@@ -33,6 +33,7 @@ export function SessionCanvas() {
           selection={editor.selection}
           highlight={s.highlight}
           readOnly={s.readOnly}
+          movable={s.readOnly}
           onLiveChange={editor.liveMove}
           onCommitDrag={editor.commitDrag}
           onChange={editor.change}
