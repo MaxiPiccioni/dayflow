@@ -1,11 +1,11 @@
+import { cartesian, sub } from "./engine.js";
 /* ===== Contenido: Unidad 1 (apunte UTN-FRC AGA 2026) =====
    cmds: '!' = no se dibuja · '~' = auxiliar punteado · expect: valores correctos para comprobar. */
-const UNITS = [{ id: 1, title: 'Unidad 1 · Vectores libres en ℝ², ℝ³ y ℝⁿ' }, { id: 2, title: 'Unidad 2 · Matrices', mat: true }];
 const R2 = 'ℝ²', R3 = 'ℝ³', RN = 'ℝⁿ';
 const SQ = Math.sqrt;
-const EX = [];
-function ejemplo(id, title, tag, text, items){ EX.push({ id, kind: 'ej', unit: 1, n: id.slice(1), title, tag, text, items }); }
-function ejercicio(n, title, tag, text, items){ EX.push({ id: 'e' + n, num: n, n, kind: 'ex', unit: 1, title, tag, text, items }); }
+export const EX1 = [];
+function ejemplo(id, title, tag, text, items){ EX1.push({ id, kind: 'ej', unit: 1, n: id.slice(1), title, tag, text, items }); }
+function ejercicio(n, title, tag, text, items){ EX1.push({ id: 'e' + n, num: n, n, kind: 'ex', unit: 1, title, tag, text, items }); }
 
 /* ---------- Ejemplos (recuadros del apunte) ---------- */
 ejemplo('x1', 'Vector definido por dos puntos', R2,

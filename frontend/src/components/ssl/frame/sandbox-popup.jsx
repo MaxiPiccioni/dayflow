@@ -21,7 +21,7 @@ export function SandboxPopup({ title, onClose, headerExtra, children }) {
     const onKey = (event) => {
       if (event.key === "Escape") {
         // Si hay una lista abierta (selectores), Escape solo la cierra a ella.
-        if (document.querySelector("[role='listbox']")) return;
+        if (document.querySelector("[role='listbox']") || event.target.closest?.("[data-keep-escape]")) return;
         closeRef.current();
         return;
       }

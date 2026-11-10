@@ -1,8 +1,10 @@
+import { fmtVal, mk, sub } from "./engine.js";
+export const EX2 = [];
 /* ===== Unidad 2 · Matrices ===== */
 const mx = rows => '[' + rows.map(r => r.join(',')).join(';') + ']';
 const MM = rows => ({ m: rows });
-function ejemplo2(n, title, text, items){ EX.push({ id: 'u2x' + n, kind: 'ej', unit: 2, n, title, tag: 'Matrices', text, items }); }
-function ejercicio2(n, title, text, items){ EX.push({ id: 'u2e' + n, num: n, n, kind: 'ex', unit: 2, title, tag: 'Matrices', text, items }); }
+function ejemplo2(n, title, text, items){ EX2.push({ id: 'u2x' + n, kind: 'ej', unit: 2, n, title, tag: 'Matrices', text, items }); }
+function ejercicio2(n, title, text, items){ EX2.push({ id: 'u2e' + n, num: n, n, kind: 'ex', unit: 2, title, tag: 'Matrices', text, items }); }
 const Z = (m, n) => Array.from({ length: m }, () => Array(n).fill(0));
 const SH = 'La numeración de las respuestas del apunte está corrida desde el ejercicio 22 hasta el 27: la respuesta rotulada «N» corresponde al ejercicio N + 1. ';
 
