@@ -7,9 +7,10 @@ const stateLabelSize = (id) => (id.length > 7 ? 9 : id.length > 4 ? 11 : 14);
 // Lienzo SVG del editor. Modos: "select" (mover y elegir), "state" (agregar estado con un clic),
 // "link" (unir: clic en el origen y clic en el destino; el mismo estado hace un bucle) y "delete".
 // Cada estado es un botón enfocable: Enter lo elige, las flechas lo mueven y Supr lo borra.
-export function MachineCanvas({ machine, mode, selection, highlight, readOnly, onLiveChange, onCommitDrag, onChange, onSelect, onDelete, onRequestTransition, linkFrom, onLinkFrom, fill = false }) {
+export function MachineCanvas({ machine, mode, selection, highlight, readOnly, onLiveChange, onCommitDrag, onChange, onSelect, onDelete, onRequestTransition, linkFrom, onLinkFrom, onStateTap, onStateDoubleTap, fill = false }) {
   const svgRef = useRef(null);
   const drag = useRef(null);
+  const lastTap = useRef(null);
   const [hover, setHover] = useState(null);
   const markerId = useId();
   const { width, height } = canvasSize(machine.states);
@@ -61,10 +62,16 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
     onLiveChange(d.id, q.x, q.y);
   };
 
-  const pointerUp = () => {
+  const pointerUp = (event) => {
     const d = drag.current;
     drag.current = null;
-    if (d?.moved) onCommitDrag(d.start);
+    if (d?.moved) { onCommitDrag(d.start); lastTap.current = null; return; }
+    // Un toque sin arrastrar: simple abre las opciones del estado, doble (dos toques seguidos) abre el bucle.
+    if (d && mode === "select") {
+      const now = event.timeStamp;
+      if (lastTap.current && lastTap.current.id === d.id && now - lastTap.current.time < 400) { lastTap.current = null; onStateDoubleTap?.(d.id); }
+      else { lastTap.current = { id: d.id, time: now }; onStateTap?.(d.id); }
+    }
   };
 
   const stateKeyDown = (event, s) => {
@@ -81,7 +88,7 @@ export function MachineCanvas({ machine, mode, selection, highlight, readOnly, o
       if (mode === "link") {
         if (linkFrom === null) onLinkFrom(s.id);
         else { onRequestTransition(linkFrom, s.id); onLinkFrom(null); }
-      }
+      } else if (mode === "select") onStateTap?.(s.id);
       onSelect({ state: s.id });
     } else if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
