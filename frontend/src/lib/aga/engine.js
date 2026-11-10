@@ -363,6 +363,21 @@ Object.assign(FN, {
     return { t: 's', v: ok ? 'Son iguales' : 'No son iguales' };
   },
 });
+/* menores, cofactores y adjunta (Unidad 3) */
+const minorOf = (d, i, j) => d.filter((_, r) => r !== i).map(r => r.filter((_, c) => c !== j));
+const detRaw = d => (d.length === 1 ? d[0][0] : detOf(mk(d)));
+const cofactorOf = (d, i, j) => clean(((i + j) % 2 ? -1 : 1) * detRaw(minorOf(d, i, j)));
+const cofMat = d => d.map((r, i) => r.map((_, j) => cofactorOf(d, i, j)));
+const adjMat = d => mT(mk(cofMat(d))).d;
+const cell = (a, i, j) => { const m = needM(a[0], 'El primer argumento'); needSquare(m, 'El cofactor'); const r = needNum(i, 'La fila'), c = needNum(j, 'La columna'); if (!Number.isInteger(r) || !Number.isInteger(c) || r < 1 || c < 1 || r > m.d.length || c > m.d.length) throw new Error('Posición fuera de la matriz'); return [m.d, r - 1, c - 1]; };
+Object.assign(FN, {
+  cofactores: a => { const m = needM(a[0], 'El argumento'); needSquare(m, 'La matriz de cofactores'); if (m.d.length < 2) throw new Error('Se necesita una matriz de orden 2 o mayor'); return mk(cofMat(m.d)); },
+  adjunta: a => { const m = needM(a[0], 'El argumento'); needSquare(m, 'La adjunta'); if (m.d.length < 2) throw new Error('Se necesita una matriz de orden 2 o mayor'); return mk(adjMat(m.d)); },
+  cofactor: a => cofactorOf(...cell(a, a[1], a[2])),
+  menor: a => { const [d, i, j] = cell(a, a[1], a[2]); return d.length === 1 ? 1 : detRaw(minorOf(d, i, j)); },
+});
+Object.assign(ALIAS, { adj: 'adjunta', adjoint: 'adjunta', cof: 'cofactores', cofactors: 'cofactores', minor: 'menor' });
+
 /* comparación con respuestas esperadas (compartida por la app y las pruebas) */
 function cmpExpect(got, exp, err){
   if (exp === 'ERR') return !!err;
@@ -382,4 +397,4 @@ function expShown(exp, dec){
   return exp;
 }
 
-export { ALIAS, FN, TOL, add, cartesian, clOf, clean, cmpExpect, coords, detOf, dimS, div, evalExpr, evalScene, expShown, fmtNum, fmtVal, fnKey, gaussSteps, gcd, idn, isExact, isM, isN, isV, mAdd, mInv, mMul, mPow, mT, matP, mk, mul, needM, needNum, needSquare, needV, neg, normOf, plottable, rankM, rankOf, reducidaInfo, rref, rrefM, same, sqrtForm, sub, tipoInfo, tokenize };
+export { minorOf, cofactorOf, cofMat, adjMat, ALIAS, FN, TOL, add, cartesian, clOf, clean, cmpExpect, coords, detOf, dimS, div, evalExpr, evalScene, expShown, fmtNum, fmtVal, fnKey, gaussSteps, gcd, idn, isExact, isM, isN, isV, mAdd, mInv, mMul, mPow, mT, matP, mk, mul, needM, needNum, needSquare, needV, neg, normOf, plottable, rankM, rankOf, reducidaInfo, rref, rrefM, same, sqrtForm, sub, tipoInfo, tokenize };
