@@ -439,6 +439,39 @@ Object.assign(FN, {
 });
 Object.assign(ALIAS, { sistema: 'clasificar', rouche: 'clasificar', solve: 'resolver', solucion: 'resolver', null: 'nucleo', kernel: 'nucleo', balance: 'balancear' });
 
+
+/* espacios vectoriales (Unidad 5): las columnas de la matriz son los vectores (o sus coordenadas en la base canónica) */
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+const rn = n => 'ℝ' + String(n).split('').map(d => SUP[+d]).join('');
+const colRank = A => sysInfo(A, A.map(() => 0)).rA;
+function leftNull(A){ // condiciones de compatibilidad: y·A = 0
+  const AT = A[0].map((_, j) => A.map(r => r[j]));
+  return sysInfo(AT, AT.map(() => 0)).basis.map(intVec);
+}
+function condText(v){
+  let s = '';
+  v.forEach((c, i) => { if (!c) return; const mag = Math.abs(c), co = mag === 1 ? '' : fmtNum(mag); s += (s ? (c < 0 ? ' − ' : ' + ') : c < 0 ? '−' : '') + co + 'y' + SUBD(i + 1); });
+  return s + ' = 0';
+}
+function SUBD(n){ return String(n).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[+d]).join(''); }
+Object.assign(FN, {
+  genera: a => { const A = needM(a[0], 'El argumento').d, r = colRank(A); return { t: 's', v: r === A.length ? 'Genera ' + rn(A.length) : 'No genera ' + rn(A.length) + ' (rango ' + r + ' < ' + A.length + ')' }; },
+  indep: a => { const A = needM(a[0], 'El argumento').d, r = colRank(A), k = A[0].length; return { t: 's', v: r === k ? 'Linealmente independientes' : 'Linealmente dependientes (rango ' + r + ' < ' + k + ' vectores)' }; },
+  base: a => {
+    const A = needM(a[0], 'El argumento').d, r = colRank(A), k = A[0].length, m = A.length;
+    if (r === k && k === m) return { t: 's', v: 'Es base de ' + rn(m) };
+    if (r < k) return { t: 's', v: 'No es base: son linealmente dependientes (rango ' + r + ' < ' + k + ')' };
+    return { t: 's', v: 'No es base de ' + rn(m) + ': son independientes pero no generan (' + k + ' vectores < dimensión ' + m + ')' };
+  },
+  dimension: a => { const A = needM(a[0], 'El argumento').d; return A[0].length - colRank(A); },
+  caracterizar: a => {
+    const A = needM(a[0], 'El argumento').d, r = colRank(A);
+    if (r === A.length) return { t: 's', v: 'Sin condiciones: genera ' + rn(A.length) };
+    return { t: 's', v: leftNull(A).map(condText).join(' ; ') };
+  },
+});
+Object.assign(ALIAS, { generan: 'genera', span: 'genera', li: 'indep', independencia: 'indep', independientes: 'indep', basis: 'base', dim: 'dimension', caracteriza: 'caracterizar' });
+
 /* comparación con respuestas esperadas (compartida por la app y las pruebas) */
 function cmpExpect(got, exp, err){
   if (exp === 'ERR') return !!err;
@@ -458,4 +491,4 @@ function expShown(exp, dec){
   return exp;
 }
 
-export { sysInfo, sysParts, paramText, KIND, minorOf, cofactorOf, cofMat, adjMat, ALIAS, FN, TOL, add, cartesian, clOf, clean, cmpExpect, coords, detOf, dimS, div, evalExpr, evalScene, expShown, fmtNum, fmtVal, fnKey, gaussSteps, gcd, idn, isExact, isM, isN, isV, mAdd, mInv, mMul, mPow, mT, matP, mk, mul, needM, needNum, needSquare, needV, neg, normOf, plottable, rankM, rankOf, reducidaInfo, rref, rrefM, same, sqrtForm, sub, tipoInfo, tokenize };
+export { leftNull, colRank, rn, sysInfo, sysParts, paramText, KIND, minorOf, cofactorOf, cofMat, adjMat, ALIAS, FN, TOL, add, cartesian, clOf, clean, cmpExpect, coords, detOf, dimS, div, evalExpr, evalScene, expShown, fmtNum, fmtVal, fnKey, gaussSteps, gcd, idn, isExact, isM, isN, isV, mAdd, mInv, mMul, mPow, mT, matP, mk, mul, needM, needNum, needSquare, needV, neg, normOf, plottable, rankM, rankOf, reducidaInfo, rref, rrefM, same, sqrtForm, sub, tipoInfo, tokenize };
